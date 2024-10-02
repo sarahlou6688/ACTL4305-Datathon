@@ -1,6 +1,7 @@
 library(data.table)
 library(lubridate)
 library(ggplot2)
+library(ggcorrplot)
 library(tidyverse)
 library(glmnet)
 library(caret)
@@ -12,15 +13,13 @@ library(MASS)
 
 
 #DATA PREP ----
-#read in UNSW claims and earned data 
-setwd("~/Desktop/ACTL4305/ASSIGNMENT/Assignment Data")
+#read in UNSW claims data 
 claims_data_raw  = read.csv("UNSW_claims_data.csv", header = TRUE)
-earned_data_raw  = read.csv("UNSW_earned_data_adjusted_Sep27.csv", header = TRUE)
 
 #convert to data table
 claims_data      = setDT(claims_data_raw)
-earned_data      = setDT(earned_data_raw)
 
+#claims data cleaning 
 #data checks 
 # summary(claims_data$total_claim_amount) 
 # summary(claims_data$claim_paid) 
@@ -31,14 +30,13 @@ earned_data      = setDT(earned_data_raw)
 # length(unique(claims_data$exposure_id))
 
 #remove time from claim_start_date and turn class into DATE
-claims_data[, start_date := lubridate::ymd(substr(claim_start_date, 1, 10))]
+claims_data[, claim_start_date := lubridate::ymd(substr(claim_start_date, 1, 10))]
 
 #change negative tenure values to 0
-# View(claims_data[tenure < 0])
 claims_data = claims_data[tenure < 0, tenure := 0]
 
 #fix claim_status values - check if this is even necessary??
-# View(claims_data[claim_status %in% c("covered", "covered_with_exclusions")]) #need to split into paid and not paid
+# View(claims_data[claim_status %in% c("covered", "covered_with_exclusions")]) #need to split into paid and not paid??
 # claims_data = claims_data[claim_status == "covered" & total_claim_amount > 0 & claim_paid == 0, claim_status := "covered_not_paid"]
 # claims_data = claims_data[claim_status == "covered" & total_claim_amount > 0 & claim_paid > 0, claim_status := "covered_paid"]
 # claims_data = claims_data[claim_status == "covered_with_exclusions" & total_claim_amount > 0 & claim_paid == 0, claim_status := "covered_with_exclusions_not_paid"]
@@ -59,7 +57,3 @@ claims_data_new = claims_data[,  .(total_claim_amount = sum(total_claim_amount),
 # View(claims_data_new[duplicated(claims_data_new$claim_id)])
 # nrow(claims_data_new) - length(unique(claims_data_new$claim_id)) #this isnt zero due to rows where claim_id is identical but other columns are different eg. condition_category which we cant aggregate
 
-#combine data by exposure_id and tenure 
-earned_data_new = earned_data #change to cleaned data once done 
-combined_data   = merge(claims_data_new, earned_data_new, by = c("exposure_id", "tenure"), all.y = T)
-combined_data[, claim_flag := ifelse(!is.na(claim_id), "1", "0")] #add flag to distinguish if row is a claim 
