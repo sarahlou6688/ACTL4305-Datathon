@@ -35,6 +35,9 @@ claims_data[, claim_start_date := lubridate::ymd(substr(claim_start_date, 1, 10)
 #change negative tenure values to 0
 claims_data = claims_data[tenure < 0, tenure := 0]
 
+#each row contains a single claim 
+claims_data[, claim_count := 1]
+
 #fix claim_status values - check if this is even necessary??
 # View(claims_data[claim_status %in% c("covered", "covered_with_exclusions")]) #need to split into paid and not paid??
 # claims_data = claims_data[claim_status == "covered" & total_claim_amount > 0 & claim_paid == 0, claim_status := "covered_not_paid"]
@@ -47,13 +50,13 @@ claims_data = claims_data[tenure < 0, tenure := 0]
 
 #aggregate on a claim_id level
 claims_data_new = claims_data[,  .(total_claim_amount = sum(total_claim_amount), 
-                                   claim_paid         = sum(claim_paid)), 
+                                   claim_paid         = sum(claim_paid), 
+                                   claim_count        = sum(claim_count)), 
                                  .(claim_id,
                                    exposure_id,
-                                   start_date, 
+                                   claim_start_date, 
                                    claim_status, 
                                    condition_category, 
                                    tenure)]
 # View(claims_data_new[duplicated(claims_data_new$claim_id)])
 # nrow(claims_data_new) - length(unique(claims_data_new$claim_id)) #this isnt zero due to rows where claim_id is identical but other columns are different eg. condition_category which we cant aggregate
-
