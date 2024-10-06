@@ -1,0 +1,359 @@
+library(data.table)
+library(lubridate)
+library(ggplot2)
+library(ggcorrplot)
+library(tidyverse)
+library(glmnet)
+library(caret)
+library(e1071)
+library(randomForest)
+library(PRROC) 
+library(doParallel)
+library(Rcpp)
+library(MASS)
+
+
+#DATA PREP ----
+#read in UNSW claims and earned data 
+claims_data_raw  = read.csv("UNSW_claims_data.csv", header = TRUE)
+earned_data_raw  = read.csv("UNSW_earned_data_adjusted_Sep27.csv", header = TRUE)
+
+#convert to data table
+claims_data      = setDT(claims_data_raw)
+earned_data      = setDT(earned_data_raw)
+
+#claims data cleaning 
+#data checks 
+# summary(claims_data$total_claim_amount) 
+# summary(claims_data$claim_paid) 
+# summary(claims_data$tenure) #contains negative tenure values which doesn't make sense 
+# unique(claims_data$claim_status) #why is there covered and covered_with_exclusions? should just be split between paid and not paid? 
+# unique(claims_data$condition_category)
+# length(unique(claims_data$claim_id)) #less than number of rows in data so duplicates
+# length(unique(claims_data$exposure_id))
+
+#remove time from claim_start_date and turn class into DATE
+claims_data[, claim_start_date := lubridate::ymd(substr(claim_start_date, 1, 10))]
+
+#change negative tenure values to 0
+claims_data = claims_data[tenure < 0, tenure := 0]
+
+#each row contains a single claim 
+claims_data[, claim_count := 1]
+
+#fix claim_status values - check if this is even necessary??
+# View(claims_data[claim_status %in% c("covered", "covered_with_exclusions")]) #need to split into paid and not paid??
+# claims_data = claims_data[claim_status == "covered" & total_claim_amount > 0 & claim_paid == 0, claim_status := "covered_not_paid"]
+# claims_data = claims_data[claim_status == "covered" & total_claim_amount > 0 & claim_paid > 0, claim_status := "covered_paid"]
+# claims_data = claims_data[claim_status == "covered_with_exclusions" & total_claim_amount > 0 & claim_paid == 0, claim_status := "covered_with_exclusions_not_paid"]
+# claims_data = claims_data[claim_status == "covered_with_exclusions" & total_claim_amount > 0 & claim_paid > 0, claim_status := "covered_with_exclusions_paid"]
+
+#check for duplicate claim_id 
+# View(claims_data[duplicated(claims_data$claim_id)])
+
+#aggregate on a claim_id level
+claims_data_new = claims_data[,  .(total_claim_amount = sum(total_claim_amount), 
+                                   claim_paid         = sum(claim_paid), 
+                                   claim_count        = sum(claim_count)), 
+                                 .(claim_id,
+                                   exposure_id,
+                                   claim_start_date, 
+                                   claim_status, 
+                                   condition_category, 
+                                   tenure)]
+# View(claims_data_new[duplicated(claims_data_new$claim_id)])
+# nrow(claims_data_new) - length(unique(claims_data_new$claim_id)) #this isnt zero due to rows where claim_id is identical but other columns are different eg. condition_category which we cant aggregate
+
+#earned data cleaning 
+earned_data     = earned_data[, tenure := NULL]
+earned_data_new = earned_data[, .(exposure = sum(earned_units)), 
+                                .(exposure_id, 
+                                  pet_gender, 
+                                  pet_de_sexed, 
+                                  pet_de_sexed_age, 
+                                  pet_is_switcher, 
+                                  pet_age_months, 
+                                  nb_contribution, 
+                                  nb_excess, 
+                                  nb_address_type_adj, 
+                                  nb_suburb, 
+                                  nb_postcode, 
+                                  nb_state, 
+                                  nb_breed_type, 
+                                  nb_breed_trait, 
+                                  nb_breed_name_unique, 
+                                  nb_breed_name_unique_concat)]
+
+#combine data by exposure_id 
+combined_data   = merge(claims_data_new, earned_data_new, by = "exposure_id", all.y = T)
+combined_data   = combined_data[is.na(claim_paid) == T, claim_paid := 0]
+combined_data   = combined_data[is.na(claim_count) == T, claim_count := 0]
+combined_data   = combined_data[, pet_age_months_bin := cut(pet_age_months, breaks = 30)]
+
+#EDA ----
+#feature distributions 
+#CLAIM COUNT PLOTS
+claim_count_plot = function(feature) {
+  combined_data %>% 
+    filter(!is.na(claim_id))  %>%
+    ggplot() + 
+    geom_bar(mapping = aes(x = !!sym(feature), fill = !!sym(feature)), na.rm = T) + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+    labs(title = feature)
+}
+
+# claim_count_plot("condition_category")
+# claim_count_plot("pet_gender")
+# claim_count_plot("pet_de_sexed")
+# claim_count_plot("nb_state")
+# claim_count_plot("nb_breed_type")
+
+#CLAIM FREQUENCY PLOTS
+claim_frequency_plot = function(feature) {
+  claim_freq_data = combined_data %>% 
+    group_by(!!sym(feature)) %>%
+    summarise(claim_frequency = sum(claim_count, na.rm = T)/sum(exposure)) 
+    ggplot(claim_freq_data, aes(x = !!sym(feature), y = claim_frequency, fill = !!sym(feature))) + 
+    geom_col() +
+    labs(title = feature)
+}
+
+claim_frequency_plot2 = function(feature) {
+  claim_freq_data = combined_data %>% 
+    group_by(!!sym(feature)) %>%
+    summarise(claim_frequency = sum(claim_count, na.rm = T)/sum(exposure)) 
+  ggplot(claim_freq_data, aes(x = !!sym(feature), y = claim_frequency), color = !!sym(feature)) + 
+    geom_point(color = "blue") +
+    labs(title = feature)
+}
+
+# claim_frequency_plot("pet_gender")
+# claim_frequency_plot("pet_de_sexed")
+# claim_frequency_plot("nb_state")
+# claim_frequency_plot("nb_breed_type")
+# claim_frequency_plot2("pet_age_months")
+
+#CLAIM PAID PLOTS
+claim_paid_plot = function(feature1, feature2) {
+  ggplot(combined_data) +
+    geom_boxplot(mapping = aes(x = !!sym(feature1), y = !!sym(feature2), fill = !!sym(feature1))) +
+    theme(axis.text.x = element_text(angle = 20, hjust = 1), legend.position = "none") + 
+    ylim(0, 1000) + #this needs to be checked
+    labs(title = paste0(feature1, " vs ", feature2)) 
+}
+
+claim_paid_plot2 = function(feature1, feature2) {
+  ggplot(combined_data) +
+    geom_point(mapping = aes(x = !!sym(feature1), y = !!sym(feature2), color = nb_breed_type)) +
+    labs(title = paste0(feature1, " vs ", feature2)) 
+}
+
+# claim_paid_plot("condition_category", "claim_paid")
+# claim_paid_plot("pet_gender", "claim_paid")
+# claim_paid_plot("pet_de_sexed", "claim_paid")
+# claim_paid_plot("nb_state", "claim_paid")
+# claim_paid_plot("nb_breed_type", "claim_paid")
+# claim_paid_plot2("pet_age_months", "claim_paid")
+
+#CLAIM SEVERITY PLOTS
+claim_severity_plot = function(feature) {
+  claim_severity_data = combined_data %>% 
+    group_by(!!sym(feature)) %>%
+    summarise(claim_severity = sum(claim_paid, na.rm = T)/sum(claim_count, na.rm = T))
+  ggplot(claim_severity_data, aes(x = !!sym(feature), y = claim_severity, fill = !!sym(feature))) + 
+    geom_col() +
+    labs(title = feature)
+}
+
+claim_severity_plot2 = function(feature) {
+  claim_severity_data = combined_data %>% 
+    group_by(!!sym(feature)) %>%
+    summarise(claim_severity = sum(claim_paid, na.rm = T)/sum(claim_count, na.rm = T))
+  ggplot(claim_severity_data, aes(x = !!sym(feature), y = claim_severity)) + 
+    geom_point(color = "blue") +
+    labs(title = feature)
+}
+
+# claim_severity_plot("pet_gender")
+# claim_severity_plot("pet_de_sexed")
+# claim_severity_plot("nb_state")
+# claim_severity_plot("nb_breed_type")
+# claim_severity_plot2("pet_age_months")
+
+#correlation matrix 
+corr_data  = combined_data[, .(pet_age_months, nb_breed_type, pet_de_sexed, claim_paid)]
+model.matrix(~0+., data = corr_data) %>% 
+  cor(use = "pairwise.complete.obs") %>% 
+  ggcorrplot(show.diag = FALSE, type = "lower", lab = TRUE, lab_size = 2)
+
+
+#MODELLING ---- 
+#CARE ABOUT MOST CUSTOMERS but also calc loss ratio to multiply customers by the factor 
+#target variable is claim severity/claim frequency - pure premium = cost = claim severity * claim frequency
+
+#add severity and frequency column 
+# combined_data[, claim_severity  := claim_paid/claim_count]
+# combined_data[, claim_frequency := claim_count/exposure]
+
+#CLAIM PAID 
+data_shrink_paid = combined_data[, .(claim_paid,
+                                     pet_gender, 
+                                     pet_de_sexed, 
+                                     pet_age_months, 
+                                     nb_state, 
+                                     nb_breed_type)]
+set.seed(1)
+index            = sample(1:length(data_shrink_paid$claim_paid), 0.7*length(data_shrink_paid$claim_paid))
+x_train          = data_shrink_paid[index, -1] 
+y_train          = data_shrink_paid[index, 1] 
+data_train       = data_shrink_paid[index,] 
+x_test           = data_shrink_paid[-index, -1] 
+y_test           = data_shrink_paid[-index, 1] 
+data_test        = data_shrink_paid[-index,] 
+
+x_train_matrix   = model.matrix(~., x_train)
+y_train_matrix   = as.matrix(y_train)
+x_test_matrix    = model.matrix(~., x_test)
+y_test_matrix    = as.matrix(y_test)
+
+#LASSO 
+CV_lasso_paid          = cv.glmnet(x_train_matrix, y_train_matrix, family = "gaussian", type.measure = "auc", alpha = 1, nfolds = 10)
+CV_lasso_plot_paid     = plot(CV_lasso_paid$glmnet.fit, xvar = "lambda", main = "Lasso", label = T)
+prediction_lasso_paid  = predict(CV_lasso_paid, s = CV_lasso_paid$lambda.min, newx = x_test_matrix, type = "response")
+RMSE_lasso_paid        = sqrt(mean((prediction_lasso_paid - data_test$claim_paid)^2))
+
+#RIDGE 
+CV_ridge_paid          = cv.glmnet(x_train_matrix, y_train_matrix, family = "gaussian", type.measure = "auc", alpha = 0, nfolds = 10)
+CV_ridge_plot_paid     = plot(CV_ridge_paid$glmnet.fit, xvar = "lambda", main = "Ridge", label = T)
+prediction_ridge_paid  = predict(CV_ridge_paid, s = CV_ridge_paid$lambda.min, newx = x_test_matrix, type = "response")
+RMSE_ridge_paid        = sqrt(mean((prediction_ridge_paid - data_test$claim_paid)^2))
+
+#ELASTIC NET 
+CV_en_paid             = cv.glmnet(x_train_matrix, y_train_matrix, family = "gaussian", type.measure = "auc", alpha = 0.5, nfolds = 10)
+CV_en_plot_paid        = plot(CV_en_paid$glmnet.fit, xvar = "lambda", main = "Elastic Net", label = T)
+prediction_en_paid     = predict(CV_en_paid, s = CV_en_paid$lambda.min, newx = x_test_matrix, type = "response")
+RMSE_en_paid           = sqrt(mean((prediction_en_paid - data_test$claim_paid)^2))
+
+coefs_paid = coef(CV_lasso_paid)@Dimnames[[1]][-1]
+coefs_paid = cbind(1:length(coefs_paid), coefs_paid)
+
+#GLM 
+glm_paid               = glm(claim_paid~., family = "gaussian", data = data_train)
+glm_summary_paid       = summary(glm_paid)
+prediction_glm_paid    = predict(glm_paid, newdata = data_test, type = "response")
+RMSE_glm_paid          = sqrt(mean((prediction_glm_paid - data_test$claim_paid)^2))
+
+#RMSE comparison
+RMSE_lasso_paid
+RMSE_ridge_paid 
+RMSE_en_paid 
+RMSE_glm_paid
+
+#random forest for feature importance
+set.seed(30)
+rf.fit_paid            = randomForest(claim_paid~.,data = data_shrink_paid, ntree = 500, keep.forest = FALSE, importance = TRUE) 
+ImpData_paid           = as.data.frame(importance(rf.fit_paid))
+ImpData_paid$Var.Names = row.names(ImpData_paid)
+
+rf_plot_paid = ggplot(ImpData_paid, aes(x=Var.Names, y=`%IncMSE`)) +
+  geom_segment( aes(x=Var.Names, xend=Var.Names, y=0, yend=`%IncMSE`), color="skyblue") +
+  geom_point(aes(size = IncNodePurity), color = "blue", alpha = 0.6) +
+  theme_light() +
+  coord_flip() +
+  theme(
+    legend.position ="bottom",
+    panel.grid.major.y = element_blank(),
+    panel.border = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+
+# CLAIM COUNT - edit predictors 
+data_shrink_count = combined_data[, .(claim_count,
+                                      pet_gender, 
+                                      pet_de_sexed, 
+                                      pet_age_months, 
+                                      nb_state, 
+                                      nb_breed_type)]
+set.seed(1)
+index            = sample(1:length(data_shrink_count$claim_count), 0.7*length(data_shrink_count$claim_count))
+x_train          = data_shrink_count[index, -1] 
+y_train          = data_shrink_count[index, 1] 
+data_train       = data_shrink_count[index,] 
+x_test           = data_shrink_count[-index, -1] 
+y_test           = data_shrink_count[-index, 1] 
+data_test        = data_shrink_count[-index,] 
+
+x_train_matrix   = model.matrix(~., x_train)
+y_train_matrix   = as.matrix(y_train)
+x_test_matrix    = model.matrix(~., x_test)
+y_test_matrix    = as.matrix(y_test)
+
+#LASSO 
+CV_lasso_count         = cv.glmnet(x_train_matrix, y_train_matrix, family = "gaussian", type.measure = "auc", alpha = 1, nfolds = 10)
+CV_lasso_plot_count    = plot(CV_lasso_count$glmnet.fit, xvar = "lambda", main = "Lasso", label = T)
+prediction_lasso_count = predict(CV_lasso_count, s = CV_lasso_count$lambda.min, newx = x_test_matrix, type = "response")
+RMSE_lasso_count       = sqrt(mean((prediction_lasso_count - data_test$claim_count)^2))
+
+#RIDGE 
+CV_ridge_count         = cv.glmnet(x_train_matrix, y_train_matrix, family = "gaussian", type.measure = "auc", alpha = 0, nfolds = 10)
+CV_ridge_plot_count    = plot(CV_ridge_count$glmnet.fit, xvar = "lambda", main = "Ridge", label = T)
+prediction_ridge_count = predict(CV_ridge_count, s = CV_ridge_count$lambda.min, newx = x_test_matrix, type = "response")
+RMSE_ridge_count       = sqrt(mean((prediction_ridge_count - data_test$claim_count)^2))
+
+#ELASTIC NET 
+CV_en_count            = cv.glmnet(x_train_matrix, y_train_matrix, family = "gaussian", type.measure = "auc", alpha = 0.5, nfolds = 10)
+CV_en_plot_count       = plot(CV_en_count$glmnet.fit, xvar = "lambda", main = "Elastic Net", label = T)
+prediction_en_count    = predict(CV_en_count, s = CV_en_count$lambda.min, newx = x_test_matrix, type = "response")
+RMSE_en_count          = sqrt(mean((prediction_en_count - data_test$claim_count)^2))
+
+coefs_count = coef(CV_lasso_count)@Dimnames[[1]][-1]
+coefs_count = cbind(1:length(coefs_count), coefs_count)
+
+#GLM 
+glm_count              = glm(claim_count~., family = "gaussian", data = data_train)
+glm_summary_count      = summary(glm_count)
+prediction_glm_count   = predict(glm_count, newdata = data_test, type = "response")
+RMSE_glm_count         = sqrt(mean((prediction_glm_count - data_test$claim_count)^2))
+
+#RMSE comparison
+RMSE_lasso_count
+RMSE_ridge_count 
+RMSE_en_count 
+RMSE_glm_count
+
+#random forest for feature importance
+set.seed(30)
+rf.fit_count            = randomForest(claim_count~.,data = data_shrink_count, ntree = 500, keep.forest = FALSE, importance = TRUE) 
+ImpData_count           = as.data.frame(importance(rf.fit_count ))
+ImpData_count$Var.Names = row.names(ImpData_count)
+
+rf_plot_count = ggplot(ImpData_count, aes(x=Var.Names, y=`%IncMSE`)) +
+  geom_segment( aes(x=Var.Names, xend=Var.Names, y=0, yend=`%IncMSE`), color="skyblue") +
+  geom_point(aes(size = IncNodePurity), color = "blue", alpha = 0.6) +
+  theme_light() +
+  coord_flip() +
+  theme(
+    legend.position ="bottom",
+    panel.grid.major.y = element_blank(),
+    panel.border = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+
+
+#OUTPUTS FOR MILESTONE 1 
+claim_frequency_plot("pet_de_sexed")
+claim_frequency_plot("nb_state")
+claim_frequency_plot("nb_breed_type")
+claim_frequency_plot2("pet_age_months")
+
+claim_severity_plot("pet_de_sexed")
+claim_severity_plot("nb_state")
+claim_severity_plot("nb_breed_type")
+claim_severity_plot2("pet_age_months")
+
+rf_plot_paid 
+rf_plot_count
+
+CV_lasso_plot_paid  = plot(CV_lasso_paid$glmnet.fit, xvar = "lambda", main = "Lasso", label = T)
+CV_lasso_plot_count = plot(CV_lasso_count$glmnet.fit, xvar = "lambda", main = "Lasso", label = T)
+coefs_paid
