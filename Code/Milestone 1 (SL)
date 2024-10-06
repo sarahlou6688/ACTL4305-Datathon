@@ -289,19 +289,19 @@ x_test_matrix    = model.matrix(~., x_test)
 y_test_matrix    = as.matrix(y_test)
 
 #LASSO 
-CV_lasso_count         = cv.glmnet(x_train_matrix, y_train_matrix, family = "gaussian", type.measure = "auc", alpha = 1, nfolds = 10)
+CV_lasso_count         = cv.glmnet(x_train_matrix, y_train_matrix, family = "poisson", type.measure = "auc", alpha = 1, nfolds = 10)
 CV_lasso_plot_count    = plot(CV_lasso_count$glmnet.fit, xvar = "lambda", main = "Lasso", label = T)
 prediction_lasso_count = predict(CV_lasso_count, s = CV_lasso_count$lambda.min, newx = x_test_matrix, type = "response")
 RMSE_lasso_count       = sqrt(mean((prediction_lasso_count - data_test$claim_count)^2))
 
 #RIDGE 
-CV_ridge_count         = cv.glmnet(x_train_matrix, y_train_matrix, family = "gaussian", type.measure = "auc", alpha = 0, nfolds = 10)
+CV_ridge_count         = cv.glmnet(x_train_matrix, y_train_matrix, family = "poisson", type.measure = "auc", alpha = 0, nfolds = 10)
 CV_ridge_plot_count    = plot(CV_ridge_count$glmnet.fit, xvar = "lambda", main = "Ridge", label = T)
 prediction_ridge_count = predict(CV_ridge_count, s = CV_ridge_count$lambda.min, newx = x_test_matrix, type = "response")
 RMSE_ridge_count       = sqrt(mean((prediction_ridge_count - data_test$claim_count)^2))
 
 #ELASTIC NET 
-CV_en_count            = cv.glmnet(x_train_matrix, y_train_matrix, family = "gaussian", type.measure = "auc", alpha = 0.5, nfolds = 10)
+CV_en_count            = cv.glmnet(x_train_matrix, y_train_matrix, family = "poisson", type.measure = "auc", alpha = 0.5, nfolds = 10)
 CV_en_plot_count       = plot(CV_en_count$glmnet.fit, xvar = "lambda", main = "Elastic Net", label = T)
 prediction_en_count    = predict(CV_en_count, s = CV_en_count$lambda.min, newx = x_test_matrix, type = "response")
 RMSE_en_count          = sqrt(mean((prediction_en_count - data_test$claim_count)^2))
@@ -310,7 +310,7 @@ coefs_count = coef(CV_lasso_count)@Dimnames[[1]][-1]
 coefs_count = cbind(1:length(coefs_count), coefs_count)
 
 #GLM 
-glm_count              = glm(claim_count~., family = "gaussian", data = data_train)
+glm_count              = glm(claim_count~., family = "poisson", data = data_train)
 glm_summary_count      = summary(glm_count)
 prediction_glm_count   = predict(glm_count, newdata = data_test, type = "response")
 RMSE_glm_count         = sqrt(mean((prediction_glm_count - data_test$claim_count)^2))
@@ -356,4 +356,5 @@ rf_plot_count
 
 CV_lasso_plot_paid  = plot(CV_lasso_paid$glmnet.fit, xvar = "lambda", main = "Lasso", label = T)
 CV_lasso_plot_count = plot(CV_lasso_count$glmnet.fit, xvar = "lambda", main = "Lasso", label = T)
+coefs_paidmbda", main = "Lasso", label = T)
 coefs_paid
