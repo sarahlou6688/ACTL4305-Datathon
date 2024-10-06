@@ -238,7 +238,7 @@ coefs_paid = coef(CV_lasso_paid)@Dimnames[[1]][-1]
 coefs_paid = cbind(1:length(coefs_paid), coefs_paid)
 
 #GLM 
-glm_paid               = glm(claim_paid~., family = "gaussian", data = data_train)
+glm_paid               = glm(claim_paid~., family = "Gamma"(link = "log"), data = data_train) 
 glm_summary_paid       = summary(glm_paid)
 prediction_glm_paid    = predict(glm_paid, newdata = data_test, type = "response")
 RMSE_glm_paid          = sqrt(mean((prediction_glm_paid - data_test$claim_paid)^2))
@@ -268,12 +268,13 @@ rf_plot_paid = ggplot(ImpData_paid, aes(x=Var.Names, y=`%IncMSE`)) +
   )
 
 # CLAIM COUNT - edit predictors 
-data_shrink_count = combined_data[, .(claim_count,
-                                      pet_gender, 
-                                      pet_de_sexed, 
-                                      pet_age_months, 
-                                      nb_state, 
-                                      nb_breed_type)]
+data_shrink_count = combined_data[exposure > 0, .(claim_count,
+                                                  exposure,
+                                                  pet_gender, 
+                                                  pet_de_sexed, 
+                                                  pet_age_months, 
+                                                  nb_state, 
+                                                  nb_breed_type)]
 set.seed(1)
 index            = sample(1:length(data_shrink_count$claim_count), 0.7*length(data_shrink_count$claim_count))
 x_train          = data_shrink_count[index, -1] 
@@ -287,6 +288,9 @@ x_train_matrix   = model.matrix(~., x_train)
 y_train_matrix   = as.matrix(y_train)
 x_test_matrix    = model.matrix(~., x_test)
 y_test_matrix    = as.matrix(y_test)
+
+# mean(data_shrink_count$claim_count)
+# var(data_shrink_count$claim_count)
 
 #LASSO 
 CV_lasso_count         = cv.glmnet(x_train_matrix, y_train_matrix, family = "poisson", type.measure = "auc", alpha = 1, nfolds = 10)
@@ -310,7 +314,7 @@ coefs_count = coef(CV_lasso_count)@Dimnames[[1]][-1]
 coefs_count = cbind(1:length(coefs_count), coefs_count)
 
 #GLM 
-glm_count              = glm(claim_count~., family = "poisson", data = data_train)
+glm_count              = glm(claim_count~., family = "poisson", data = data_train, offset = log(exposure))
 glm_summary_count      = summary(glm_count)
 prediction_glm_count   = predict(glm_count, newdata = data_test, type = "response")
 RMSE_glm_count         = sqrt(mean((prediction_glm_count - data_test$claim_count)^2))
@@ -323,7 +327,7 @@ RMSE_glm_count
 
 #random forest for feature importance
 set.seed(30)
-rf.fit_count            = randomForest(claim_count~.,data = data_shrink_count, ntree = 500, keep.forest = FALSE, importance = TRUE) 
+rf.fit_count            = randomForest(claim_count~., data = data_shrink_count, ntree = 500, keep.forest = FALSE, importance = TRUE) 
 ImpData_count           = as.data.frame(importance(rf.fit_count ))
 ImpData_count$Var.Names = row.names(ImpData_count)
 
@@ -355,6 +359,6 @@ rf_plot_paid
 rf_plot_count
 
 CV_lasso_plot_paid  = plot(CV_lasso_paid$glmnet.fit, xvar = "lambda", main = "Lasso", label = T)
-CV_lasso_plot_count = plot(CV_lasso_count$glmnet.fit, xvar = "lambda", main = "Lasso", label = T)
-coefs_paidmbda", main = "Lasso", label = T)
 coefs_paid
+CV_lasso_plot_count = plot(CV_lasso_count$glmnet.fit, xvar = "lambda", main = "Lasso", label = T)
+coefs_count
