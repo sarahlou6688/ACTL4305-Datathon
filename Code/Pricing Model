@@ -1,1 +1,153 @@
+#MODELLING ---- 
+#CARE ABOUT MOST CUSTOMERS but also calc loss ratio to multiply customers by the factor 
+#target variable is claim severity/claim frequency - pure premium = cost = claim severity * claim frequency
 
+#CLAIM PAID 
+combined_data[, claim_sev := claim_paid/claim_count]
+
+data_shrink_paid = combined_data[, .(claim_sev,
+                                     pet_gender, 
+                                     pet_de_sexed, 
+                                     pet_age_months, 
+                                     nb_state, 
+                                     nb_breed_type)]
+set.seed(1)
+index            = sample(1:length(data_shrink_paid$claim_sev), 0.7*length(data_shrink_paid$claim_sev))
+x_train          = data_shrink_paid[index, -1] 
+y_train          = data_shrink_paid[index, 1] 
+data_train       = data_shrink_paid[index,] 
+x_test           = data_shrink_paid[-index, -1] 
+y_test           = data_shrink_paid[-index, 1] 
+data_test        = data_shrink_paid[-index,] 
+
+x_train_matrix   = model.matrix(~., x_train)
+y_train_matrix   = as.matrix(y_train)
+x_test_matrix    = model.matrix(~., x_test)
+y_test_matrix    = as.matrix(y_test)
+
+#LASSO 
+CV_lasso_paid          = cv.glmnet(x_train_matrix, y_train_matrix, family = "gaussian", type.measure = "auc", alpha = 1, nfolds = 10)
+CV_lasso_plot_paid     = plot(CV_lasso_paid$glmnet.fit, xvar = "lambda", main = "Lasso", label = T)
+prediction_lasso_paid  = predict(CV_lasso_paid, s = CV_lasso_paid$lambda.min, newx = x_test_matrix, type = "response")
+RMSE_lasso_paid        = sqrt(mean((prediction_lasso_paid - data_test$claim_sev)^2))
+
+#RIDGE 
+CV_ridge_paid          = cv.glmnet(x_train_matrix, y_train_matrix, family = "gaussian", type.measure = "auc", alpha = 0, nfolds = 10)
+CV_ridge_plot_paid     = plot(CV_ridge_paid$glmnet.fit, xvar = "lambda", main = "Ridge", label = T)
+prediction_ridge_paid  = predict(CV_ridge_paid, s = CV_ridge_paid$lambda.min, newx = x_test_matrix, type = "response")
+RMSE_ridge_paid        = sqrt(mean((prediction_ridge_paid - data_test$claim_sev)^2))
+
+#ELASTIC NET 
+CV_en_paid             = cv.glmnet(x_train_matrix, y_train_matrix, family = "gaussian", type.measure = "auc", alpha = 0.5, nfolds = 10)
+CV_en_plot_paid        = plot(CV_en_paid$glmnet.fit, xvar = "lambda", main = "Elastic Net", label = T)
+prediction_en_paid     = predict(CV_en_paid, s = CV_en_paid$lambda.min, newx = x_test_matrix, type = "response")
+RMSE_en_paid           = sqrt(mean((prediction_en_paid - data_test$claim_sev)^2))
+
+coefs_paid = coef(CV_lasso_paid)@Dimnames[[1]][-1]
+coefs_paid = cbind(1:length(coefs_paid), coefs_paid)
+
+#GLM 
+glm_paid               = glm(claim_sev., family = "Gamma"(link = "log"), data = data_train) 
+glm_summary_paid       = summary(glm_paid)
+prediction_glm_paid    = predict(glm_paid, newdata = data_test, type = "response")
+RMSE_glm_paid          = sqrt(mean((prediction_glm_paid - data_test$claim_sev)^2))
+
+#RMSE comparison
+RMSE_lasso_paid
+RMSE_ridge_paid 
+RMSE_en_paid 
+RMSE_glm_paid
+
+#random forest for feature importance
+set.seed(30)
+rf.fit_paid            = randomForest(claim_sev~.,data = data_shrink_paid, ntree = 500, keep.forest = FALSE, importance = TRUE) 
+ImpData_paid           = as.data.frame(importance(rf.fit_paid))
+ImpData_paid$Var.Names = row.names(ImpData_paid)
+
+rf_plot_paid = ggplot(ImpData_paid, aes(x=Var.Names, y=`%IncMSE`)) +
+  geom_segment( aes(x=Var.Names, xend=Var.Names, y=0, yend=`%IncMSE`), color="skyblue") +
+  geom_point(aes(size = IncNodePurity), color = "blue", alpha = 0.6) +
+  theme_light() +
+  coord_flip() +
+  theme(
+    legend.position ="bottom",
+    panel.grid.major.y = element_blank(),
+    panel.border = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+
+# CLAIM COUNT - edit predictors 
+data_shrink_count = combined_data[exposure > 0, .(claim_count,
+                                                  exposure,
+                                                  pet_gender, 
+                                                  pet_de_sexed, 
+                                                  pet_age_months, 
+                                                  nb_state, 
+                                                  nb_breed_type)]
+set.seed(1)
+index            = sample(1:length(data_shrink_count$claim_count), 0.7*length(data_shrink_count$claim_count))
+x_train          = data_shrink_count[index, -1] 
+y_train          = data_shrink_count[index, 1] 
+data_train       = data_shrink_count[index,] 
+x_test           = data_shrink_count[-index, -1] 
+y_test           = data_shrink_count[-index, 1] 
+data_test        = data_shrink_count[-index,] 
+
+x_train_matrix   = model.matrix(~., x_train)
+y_train_matrix   = as.matrix(y_train)
+x_test_matrix    = model.matrix(~., x_test)
+y_test_matrix    = as.matrix(y_test)
+
+# mean(data_shrink_count$claim_count)
+# var(data_shrink_count$claim_count)
+
+#LASSO 
+CV_lasso_count         = cv.glmnet(x_train_matrix, y_train_matrix, family = "poisson", type.measure = "auc", alpha = 1, nfolds = 10)
+CV_lasso_plot_count    = plot(CV_lasso_count$glmnet.fit, xvar = "lambda", main = "Lasso", label = T)
+prediction_lasso_count = predict(CV_lasso_count, s = CV_lasso_count$lambda.min, newx = x_test_matrix, type = "response")
+RMSE_lasso_count       = sqrt(mean((prediction_lasso_count - data_test$claim_count)^2))
+
+#RIDGE 
+CV_ridge_count         = cv.glmnet(x_train_matrix, y_train_matrix, family = "poisson", type.measure = "auc", alpha = 0, nfolds = 10)
+CV_ridge_plot_count    = plot(CV_ridge_count$glmnet.fit, xvar = "lambda", main = "Ridge", label = T)
+prediction_ridge_count = predict(CV_ridge_count, s = CV_ridge_count$lambda.min, newx = x_test_matrix, type = "response")
+RMSE_ridge_count       = sqrt(mean((prediction_ridge_count - data_test$claim_count)^2))
+
+#ELASTIC NET 
+CV_en_count            = cv.glmnet(x_train_matrix, y_train_matrix, family = "poisson", type.measure = "auc", alpha = 0.5, nfolds = 10)
+CV_en_plot_count       = plot(CV_en_count$glmnet.fit, xvar = "lambda", main = "Elastic Net", label = T)
+prediction_en_count    = predict(CV_en_count, s = CV_en_count$lambda.min, newx = x_test_matrix, type = "response")
+RMSE_en_count          = sqrt(mean((prediction_en_count - data_test$claim_count)^2))
+
+coefs_count = coef(CV_lasso_count)@Dimnames[[1]][-1]
+coefs_count = cbind(1:length(coefs_count), coefs_count)
+
+#GLM 
+glm_count              = glm(claim_count~., family = "poisson", data = data_train, offset = log(exposure))
+glm_summary_count      = summary(glm_count)
+prediction_glm_count   = predict(glm_count, newdata = data_test, type = "response")
+RMSE_glm_count         = sqrt(mean((prediction_glm_count - data_test$claim_count)^2))
+
+#RMSE comparison
+RMSE_lasso_count
+RMSE_ridge_count 
+RMSE_en_count 
+RMSE_glm_count
+
+#random forest for feature importance
+set.seed(30)
+rf.fit_count            = randomForest(claim_count~., data = data_shrink_count, ntree = 500, keep.forest = FALSE, importance = TRUE) 
+ImpData_count           = as.data.frame(importance(rf.fit_count ))
+ImpData_count$Var.Names = row.names(ImpData_count)
+
+rf_plot_count = ggplot(ImpData_count, aes(x=Var.Names, y=`%IncMSE`)) +
+  geom_segment( aes(x=Var.Names, xend=Var.Names, y=0, yend=`%IncMSE`), color="skyblue") +
+  geom_point(aes(size = IncNodePurity), color = "blue", alpha = 0.6) +
+  theme_light() +
+  coord_flip() +
+  theme(
+    legend.position ="bottom",
+    panel.grid.major.y = element_blank(),
+    panel.border = element_blank(),
+    axis.ticks.y = element_blank()
+  )
