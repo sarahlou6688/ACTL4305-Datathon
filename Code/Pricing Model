@@ -5,12 +5,12 @@
 #CLAIM PAID 
 combined_data[, claim_sev := claim_paid/claim_count]
 
-data_shrink_paid = combined_data[, .(claim_sev,
-                                     pet_gender, 
-                                     pet_de_sexed, 
-                                     pet_age_months, 
-                                     nb_state, 
-                                     nb_breed_type)]
+data_shrink_paid = combined_data[claim_sev > 0, .(claim_sev,
+                                                  pet_gender, 
+                                                  pet_de_sexed, 
+                                                  pet_age_months, 
+                                                  nb_state, 
+                                                  nb_breed_type)]
 set.seed(1)
 index            = sample(1:length(data_shrink_paid$claim_sev), 0.7*length(data_shrink_paid$claim_sev))
 x_train          = data_shrink_paid[index, -1] 
@@ -47,7 +47,7 @@ coefs_paid = coef(CV_lasso_paid)@Dimnames[[1]][-1]
 coefs_paid = cbind(1:length(coefs_paid), coefs_paid)
 
 #GLM 
-glm_paid               = glm(claim_sev., family = "Gamma"(link = "log"), data = data_train) 
+glm_paid               = glm(claim_sev~., family = "Gamma"(link = "log"), data = data_train) 
 glm_summary_paid       = summary(glm_paid)
 prediction_glm_paid    = predict(glm_paid, newdata = data_test, type = "response")
 RMSE_glm_paid          = sqrt(mean((prediction_glm_paid - data_test$claim_sev)^2))
@@ -151,3 +151,5 @@ rf_plot_count = ggplot(ImpData_count, aes(x=Var.Names, y=`%IncMSE`)) +
     panel.border = element_blank(),
     axis.ticks.y = element_blank()
   )
+
+
