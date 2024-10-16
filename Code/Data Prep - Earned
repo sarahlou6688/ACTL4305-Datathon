@@ -116,118 +116,42 @@ explore1 <- explore1 %>%
                                    sample(valid_values, sum(pet_de_sexed_age == "Not Sure"), replace = TRUE),
                                    pet_de_sexed_age))
 
-# Load necessary library
-library(randomForest)
-library(caret) # For confusionMatrix
-
-# Set seed for reproducibility
-set.seed(123)
-
-# Split the dataset into training and testing sets
-train_index <- sample(seq_len(nrow(earned)), size = 0.8 * nrow(earned))
-train_set <- earned[train_index, ]
-test_set <- earned[-train_index, ]
-
-# Ensure pet_is_switcher is a factor for classification
-train_set$pet_is_switcher <- as.factor(train_set$pet_is_switcher)
-test_set$pet_is_switcher <- as.factor(test_set$pet_is_switcher)
-
-# Fit the Random Forest model on the training set
-rf_model <- randomForest(pet_is_switcher ~ ., data = train_set, na.action = na.omit)
-
-# Predict on the test set
-test_set$predicted <- predict(rf_model, newdata = test_set)
-
-# Evaluate the model's accuracy
-confusion_matrix <- confusionMatrix(test_set$predicted, test_set$pet_is_switcher)
-
-# Print the confusion matrix and accuracy
-print(confusion_matrix)
-
-# Now we handle missing values for pet_is_switcher in the original dataset
-# First, split the data into rows with and without missing values in pet_is_switcher
-non_missing_switcher <- earned[!is.na(earned$pet_is_switcher), ]
-missing_switcher <- earned[is.na(earned$pet_is_switcher), ]
-
-# Ensure pet_is_switcher is a factor for classification
-non_missing_switcher$pet_is_switcher <- as.factor(non_missing_switcher$pet_is_switcher)
-
-# Fit a new Random Forest model using rows without missing values
-rf_model_complete <- randomForest(pet_is_switcher ~ ., data = non_missing_switcher, na.action = na.omit)
-
-# Predict the missing values for pet_is_switcher
-missing_switcher$pet_is_switcher <- predict(rf_model_complete, newdata = missing_switcher)
-
-# Combine the datasets
-earned <- rbind(non_missing_switcher, missing_switcher)
-
-# Display the first few rows of the updated dataset
-head(earned)
-
-
-
-
 
 # Load necessary libraries
 library(randomForest)
 library(caret)
 
-# Split the dataset into training and testing sets
-set.seed(123) # Set seed for reproducibility
-train_index <- sample(seq_len(nrow(earned)), size = 0.8 * nrow(earned))
-train_set <- earned[train_index, ]
-test_set <- earned[-train_index, ]
-
-# Ensure pet_is_switcher is a factor for classification
-train_set$pet_is_switcher <- as.factor(train_set$pet_is_switcher)
-test_set$pet_is_switcher <- as.factor(test_set$pet_is_switcher)
-
-# Fit the Random Forest model on the training set
-rf_model <- randomForest(pet_is_switcher ~ ., data = train_set, na.action = na.omit)
-
-# Predict on the test set
-test_set$predicted <- predict(rf_model, newdata = test_set)
-
-# Evaluate the model's accuracy
-confusion_matrix <- confusionMatrix(test_set$predicted, test_set$pet_is_switcher)
-
-# Print the confusion matrix and accuracy
-print(confusion_matrix)
-
-# Predict the missing values for pet_is_switcher in the original dataset
-predict_data$pet_is_switcher <- predict(rf_model, newdata = predict_data)
-
-# Combine the datasets
-earned <- rbind(train_set, test_set, predict_data)
-
-# Display the first few rows of the updated dataset
-head(earned)
-
-
-
-##IMPUTATION FOR pet_is_switcher### (not sure if we should look at calculations based on policy period and inception dates)
-
+# Subset the data where 'pet_is_switcher' is not missing
 non_missing_switcher <- earned[!is.na(earned$pet_is_switcher), ]
-print(head(non_missing_switcher))  # This will show the first few rows without missing values in pet_is_switcher.
 
+# Split the non-missing data into train and test sets (70% train, 30% test)
+set.seed(123)  # For reproducibility
+train_index <- createDataPartition(non_missing_switcher$pet_is_switcher, p = 0.7, list = FALSE)
+train_data <- non_missing_switcher[train_index, ]
+test_data <- non_missing_switcher[-train_index, ]
 
-library(randomForest)
-
-# Train a Random Forest model using relevant features
-train_data <- earned[!is.na(earned$pet_is_switcher), ]
-predict_data <- earned[is.na(earned$pet_is_switcher), ]
-
-# Ensure pet_is_switcher is a factor for classification
+# Ensure 'pet_is_switcher' is a factor for classification
 train_data$pet_is_switcher <- as.factor(train_data$pet_is_switcher)
+test_data$pet_is_switcher <- as.factor(test_data$pet_is_switcher)
 
-# Fit the model
-rf_model <- randomForest(pet_is_switcher ~ .,data = train_data, na.action = na.omit)
+# Fit the random forest model on the training data
+rf_model <- randomForest(pet_is_switcher ~ ., data = train_data, na.action = na.omit)
 
-# Predict the missing values for pet_is_switcher
+# Predict on the test set to evaluate model performance
+test_predictions <- predict(rf_model, newdata = test_data)
+
+# Create confusion matrix to evaluate model accuracy on the test set
+conf_matrix <- confusionMatrix(test_predictions, test_data$pet_is_switcher)
+
+# Print the confusion matrix to check accuracy and other metrics
+print(conf_matrix)
+
+# Now predict the missing values in 'predict_data' (rows where 'pet_is_switcher' is missing)
+predict_data <- earned[is.na(earned$pet_is_switcher), ]
 predict_data$pet_is_switcher <- predict(rf_model, newdata = predict_data)
 
-# Combine the datasets
-earned <- rbind(train_data, predict_data)
+# Combine the original datasets (train_data, test_data, and predict_data) back together
+earned_unique <- rbind(train_data, test_data, predict_data)
 
 ##Combine Dataset with Exposure ID##############
 
