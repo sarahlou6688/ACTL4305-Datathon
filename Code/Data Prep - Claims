@@ -35,6 +35,9 @@ claims_data[, claim_start_date := lubridate::ymd(substr(claim_start_date, 1, 10)
 #change negative tenure values to 0
 claims_data = claims_data[tenure < 0, tenure := 0]
 
+#change column classes 
+claims_data[, condition_category := as.factor(condition_category)]
+
 #each row contains a single claim 
 claims_data[, claim_count := 1]
 
