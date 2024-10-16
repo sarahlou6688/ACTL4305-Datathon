@@ -229,5 +229,27 @@ predict_data$pet_is_switcher <- predict(rf_model, newdata = predict_data)
 # Combine the datasets
 earned <- rbind(train_data, predict_data)
 
+##Combine Dataset with Exposure ID##############
+
+# Perform a full join on the exposure_id
+combined_data <- claims_data_new %>%
+  full_join(earned_unique, by = "exposure_id")
+
+# Ensure that columns from claims_data_new get NA values where there are no matches
+combined_data <- combined_data %>%
+  mutate(across(starts_with("column_prefix_claims"), ~ ifelse(is.na(.), NA, .)))
+
+# If needed, you can arrange or select specific columns as well
+# For example, rearranging or selecting only the columns you want to keep:
+final_data <- combined_data %>%
+  dplyr::select(exposure_id, everything())  # Adjust as necessary
+
+# Replace NA values in the claim_status column
+final_data <- final_data %>%
+  dplyr::mutate(claim_status = ifelse(is.na(claim_status), "claim_not_made", claim_status))
+
+# View the final combined data
+print(final_data)
+
 
 
