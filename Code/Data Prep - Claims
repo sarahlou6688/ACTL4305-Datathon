@@ -11,7 +11,7 @@ library(PRROC)
 library(doParallel)
 library(Rcpp)
 library(MASS)
-
+library(randomForest)
 
 #DATA PREP ----
 #read in UNSW claims data 
