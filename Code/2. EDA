@@ -1,1 +1,95 @@
+feature distributions 
+#CLAIM COUNT PLOTS
+claim_count_plot = function(feature) {
+  combined_data %>% 
+    filter(!is.na(claim_id))  %>%
+    ggplot() + 
+    geom_bar(mapping = aes(x = !!sym(feature), fill = !!sym(feature)), na.rm = T) + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+    labs(title = feature)
+}
+
+# claim_count_plot("condition_category")
+# claim_count_plot("pet_gender")
+# claim_count_plot("pet_de_sexed")
+# claim_count_plot("nb_state")
+# claim_count_plot("nb_breed_type")
+
+#CLAIM FREQUENCY PLOTS
+claim_frequency_plot = function(feature) {
+  claim_freq_data = combined_data %>% 
+    group_by(!!sym(feature)) %>%
+    summarise(claim_frequency = sum(claim_count, na.rm = T)/sum(exposure)) 
+    ggplot(claim_freq_data, aes(x = !!sym(feature), y = claim_frequency, fill = !!sym(feature))) + 
+    geom_col() +
+    labs(title = feature)
+}
+
+claim_frequency_plot2 = function(feature) {
+  claim_freq_data = combined_data %>% 
+    group_by(!!sym(feature)) %>%
+    summarise(claim_frequency = sum(claim_count, na.rm = T)/sum(exposure)) 
+  ggplot(claim_freq_data, aes(x = !!sym(feature), y = claim_frequency), color = !!sym(feature)) + 
+    geom_point(color = "blue") +
+    labs(title = feature)
+}
+
+# claim_frequency_plot("pet_gender")
+# claim_frequency_plot("pet_de_sexed")
+# claim_frequency_plot("nb_state")
+# claim_frequency_plot("nb_breed_type")
+# claim_frequency_plot2("pet_age_months")
+
+#CLAIM PAID PLOTS
+claim_paid_plot = function(feature1, feature2) {
+  ggplot(combined_data) +
+    geom_boxplot(mapping = aes(x = !!sym(feature1), y = !!sym(feature2), fill = !!sym(feature1))) +
+    theme(axis.text.x = element_text(angle = 20, hjust = 1), legend.position = "none") + 
+    ylim(0, 1000) + #this needs to be checked
+    labs(title = paste0(feature1, " vs ", feature2)) 
+}
+
+claim_paid_plot2 = function(feature1, feature2) {
+  ggplot(combined_data) +
+    geom_point(mapping = aes(x = !!sym(feature1), y = !!sym(feature2), color = nb_breed_type)) +
+    labs(title = paste0(feature1, " vs ", feature2)) 
+}
+
+# claim_paid_plot("condition_category", "claim_paid")
+# claim_paid_plot("pet_gender", "claim_paid")
+# claim_paid_plot("pet_de_sexed", "claim_paid")
+# claim_paid_plot("nb_state", "claim_paid")
+# claim_paid_plot("nb_breed_type", "claim_paid")
+# claim_paid_plot2("pet_age_months", "claim_paid")
+
+#CLAIM SEVERITY PLOTS
+claim_severity_plot = function(feature) {
+  claim_severity_data = combined_data %>% 
+    group_by(!!sym(feature)) %>%
+    summarise(claim_severity = sum(claim_paid, na.rm = T)/sum(claim_count, na.rm = T))
+  ggplot(claim_severity_data, aes(x = !!sym(feature), y = claim_severity, fill = !!sym(feature))) + 
+    geom_col() +
+    labs(title = feature)
+}
+
+claim_severity_plot2 = function(feature) {
+  claim_severity_data = combined_data %>% 
+    group_by(!!sym(feature)) %>%
+    summarise(claim_severity = sum(claim_paid, na.rm = T)/sum(claim_count, na.rm = T))
+  ggplot(claim_severity_data, aes(x = !!sym(feature), y = claim_severity)) + 
+    geom_point(color = "blue") +
+    labs(title = feature)
+}
+
+# claim_severity_plot("pet_gender")
+# claim_severity_plot("pet_de_sexed")
+# claim_severity_plot("nb_state")
+# claim_severity_plot("nb_breed_type")
+# claim_severity_plot2("pet_age_months")
+
+#correlation matrix 
+corr_data  = combined_data[, .(pet_age_months, nb_breed_type, pet_de_sexed, claim_paid)]
+model.matrix(~0+., data = corr_data) %>% 
+  cor(use = "pairwise.complete.obs") %>% 
+  ggcorrplot(show.diag = FALSE, type = "lower", lab = TRUE, lab_size = 2)
 
