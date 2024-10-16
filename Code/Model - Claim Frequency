@@ -1,0 +1,168 @@
+#CLAIM FREQUENCY
+#GLM
+set.seed(66)
+claim_freq_data = combined_data[exposure > 0, .(claim_count, #add columns after to include pet_de_sexed_age and creative factors
+                                                exposure,
+                                                pet_gender, 
+                                                pet_de_sexed, 
+                                                pet_age_months, 
+                                                pet_age_months_bin,
+                                                nb_state, 
+                                                nb_breed_type)]
+train_indices  = sample(1:nrow(claim_freq_data), size = 0.7 * nrow(claim_freq_data))
+
+#poisson
+claim_freq_poisson = glm(claim_count ~ pet_de_sexed + nb_breed_type + pet_age_months + nb_state, 
+                         data = claim_freq_data, 
+                         subset = train_indices, 
+                         offset = log(exposure), 
+                         family = poisson(link = "log"))
+summary(claim_freq_poisson)
+anova(claim_freq_poisson, test = "Chisq") #analyse the residual deviance column
+
+#quasipoisson
+claim_freq_quasi = glm(claim_count ~ pet_de_sexed + nb_breed_type + pet_age_months + nb_state, 
+                       data = claim_freq_data, 
+                       subset = train_indices, 
+                       offset = log(exposure), 
+                       family = quasipoisson(link = "log"))
+summary(claim_freq_quasi)
+anova(claim_freq_quasi, test = "Chisq") #analyse the residual deviance column
+
+#negative binomial
+claim_freq_nbin = glm.nb(claim_count ~ offset(exposure) + pet_de_sexed + nb_breed_type + pet_age_months + nb_state,
+                         data = claim_freq_data, 
+                         subset = train_indices)
+summary(claim_freq_nbin)
+anova(claim_freq_nbin, test = "Chisq") #analyse the residual deviance column
+
+
+#QQ plots to compare which distribution to use 
+sample_indices = sample(1:length(train_indices), 5000)
+#poisson
+qqnorm(qresiduals(claim_freq_poisson)[sample_indices],main = "QQ plot Poisson",
+       cex.main=0.8, cex.lab=0.8, cex.axis = 0.7)
+qqline(qresiduals(claim_freq_poisson)[sample_indices],col = "red")
+
+#quasipoisson
+qqnorm(qresiduals(claim_freq_quasi)[sample_indices],main = "QQ plot QuasiPoisson",
+       cex.main=0.8, cex.lab=0.8, cex.axis = 0.7)
+qqline(qresiduals(claim_freq_quasi)[sample_indices],col = "red")
+
+#quasipoisson
+qqnorm(qresiduals(claim_freq_nbin)[sample_indices],main = "QQ plot Neg Binomial",
+       cex.main=0.8, cex.lab=0.8, cex.axis = 0.7)
+qqline(qresiduals(claim_freq_nbin)[sample_indices],col = "red")
+
+
+#Feature Selection 
+claim_freq_full = glm(claim_count ~ offset(log(exposure)) + pet_de_sexed + nb_breed_type + pet_age_months + nb_state,
+                       data = claim_freq_data, 
+                       subset = train_indices, 
+                       family = poisson(link = "log"))
+
+claim_freq_none = glm(claim_count ~ offset(log(exposure)) + 1,
+                       data = claim_freq_data, 
+                       subset = train_indices, 
+                       family = poisson(link = "log"))
+
+#AIC backward
+claim_freq_aic_back = stepAIC(claim_freq_full,
+                              direction = "backward",
+                              k = 2, # set k = 2 for AIC; k = log(n) for BIC
+                              scope = list(upper = claim_freq_full, lower = claim_freq_none))
+#AIC forward 
+claim_freq_aic_fwd  = stepAIC(claim_freq_none,
+                              direction = "forward",
+                              k = 2, # set k = 2 for AIC; k = log(n) for BIC
+                              scope = list(upper = claim_freq_full, lower = claim_freq_none))
+#BIC backward 
+n = nrow(claim_freq_data)
+claim_freq_bic_back = stepAIC(claim_freq_full,
+                              direction = "backward",
+                              k = log(n), # set k = 2 for AIC; k = log(n) for BIC
+                              scope = list(upper = claim_freq_full, lower = claim_freq_none))
+#BIC forward
+claim_freq_bic_back = stepAIC(claim_freq_none,
+                              direction = "forward",
+                              k = log(n), # set k = 2 for AIC; k = log(n) for BIC
+                              scope = list(upper = claim_freq_full, lower = claim_freq_none))
+
+#regularisation methods
+x_train              = claim_freq_data[train_indices, -1] 
+y_train              = claim_freq_data[train_indices, 1] 
+data_train           = claim_freq_data[train_indices,] 
+x_test               = claim_freq_data[-train_indices, -1] 
+y_test               = claim_freq_data[-train_indices, 1] 
+data_test            = claim_freq_data[-train_indices,] 
+
+x_train_matrix       = model.matrix(~., x_train)
+y_train_matrix       = as.matrix(y_train)
+x_test_matrix        = model.matrix(~., x_test)
+y_test_matrix        = as.matrix(y_test)
+
+CV_lasso_count       = cv.glmnet(x_train_matrix, y_train_matrix, family = "poisson", type.measure = "auc", alpha = 1, nfolds = 10)
+CV_lasso_plot_count  = plot(CV_lasso_count$glmnet.fit, xvar = "lambda", main = "Lasso", label = T)
+pred_lasso_count     = predict(CV_lasso_count, s = CV_lasso_count$lambda.min, newx = x_test_matrix, type = "response")
+RMSE_lasso_count     = sqrt(mean((pred_lasso_count - data_test$claim_count)^2))
+
+CV_ridge_count       = cv.glmnet(x_train_matrix, y_train_matrix, family = "poisson", type.measure = "auc", alpha = 0, nfolds = 10)
+CV_ridge_plot_count  = plot(CV_ridge_count$glmnet.fit, xvar = "lambda", main = "Ridge", label = T)
+pred_ridge_count     = predict(CV_ridge_count, s = CV_ridge_count$lambda.min, newx = x_test_matrix, type = "response")
+RMSE_ridge_count     = sqrt(mean((pred_ridge_count - data_test$claim_count)^2))
+
+CV_en_count          = cv.glmnet(x_train_matrix, y_train_matrix, family = "poisson", type.measure = "auc", alpha = 0.5, nfolds = 10)
+CV_en_plot_count     = plot(CV_en_count$glmnet.fit, xvar = "lambda", main = "Elastic Net", label = T)
+pred_en_count        = predict(CV_en_count, s = CV_en_count$lambda.min, newx = x_test_matrix, type = "response")
+RMSE_en_count        = sqrt(mean((pred_en_count - data_test$claim_count)^2))
+
+coefs_count          = coef(CV_lasso_count)@Dimnames[[1]][-1]
+coefs_count          = cbind(1:length(coefs_count), coefs_count)
+
+RMSE_lasso_count
+RMSE_ridge_count 
+RMSE_en_count 
+
+
+#transformation of variables - first plot to see the graphical relationship 
+claim_frequency_plot2("pet_age_months")
+#refit glm with age as binned category
+claim_freq_age_bin = glm(claim_count ~ pet_de_sexed + nb_breed_type + pet_age_months_bin + nb_state, 
+                         data = claim_freq_data, 
+                         subset = train_indices, 
+                         offset = log(exposure), 
+                         family = poisson(link = "log"))
+summary(claim_freq_age_bin)
+anova(claim_freq_age_bin, test = "Chisq") #analyse the residual deviance column
+#refit glm with polynomial age terms
+claim_freq_age_poly = glm(claim_count ~ pet_de_sexed + nb_breed_type + pet_age_months + I(pet_age_months^2) + nb_state, 
+                         data = claim_freq_data, 
+                         subset = train_indices, 
+                         offset = log(exposure), 
+                         family = poisson(link = "log"))
+summary(claim_freq_age_poly)
+anova(claim_freq_age_poly, test = "Chisq") #analyse the residual deviance column
+
+
+#new poisson GLMs to compare with different predictor combinations - NEED TO DO AFTER LEGIT DATASET DONE
+
+
+#model comparison and evaluation
+poisson_deviance_function = function(model, test_data) {
+  # Predict on the test set using the model
+  predicted_values = predict(model, newdata = test_data, type = "response")
+  # Extract the observed values
+  observed_values = test_data$claim_count
+  # Compute the Poisson deviance
+  deviance = 2 * sum(observed_values * log(observed_values / predicted_values) - (observed_values - predicted_values), na.rm = TRUE)
+  return(deviance)
+}
+
+RMSE_function = function(model) {
+  claim_freq_test = claim_freq_data[-train_indices, ]
+  claim_freq_test$actual_claim_count = claim_freq_data[-train_indices, ]$claim_count
+  claim_freq_test$claim_count = predict(model, newdata = claim_freq_test, type = "response")
+  RMSE(claim_freq_test$claim_count, claim_freq_data[-train_indices, ]$claim_count)
+}
+
+RMSE_function(claim_freq_poisson)
