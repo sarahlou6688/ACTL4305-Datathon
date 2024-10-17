@@ -81,10 +81,12 @@ earned$pet_is_switcher <- as.logical(earned$pet_is_switcher)
 earned$is_multi_pet_plan <- as.logical(earned$is_multi_pet_plan)
 
 #UW_data make the month
-# Assuming 'myrows' is your dataset and 'UW_date' is the column with dates
-earned$UW_Date <- ymd_hms(earned$UW_Date)  # Convert the column to date-time format
-# Extract the month name
-earned$UW_Date_month <- month(earned$UW_Date, label = TRUE, abbr = FALSE)  # Extract full month name
+#Extract the month as a name using `month()` from `lubridate` and `factor()`
+earned$UW_Date_month <- month(earned$UW_Date)
+
+# Convert the numeric month to a full month name using `base` R's `month.name` vector
+earned$UW_Date_month <- factor(month.name[earned$UW_Date_month], levels = month.name)
+
 
 # Convert 'nb_policy_first_inception_date' to date format without the time
 earned$nb_policy_first_inception_date <- as_date(earned$nb_policy_first_inception_date)
