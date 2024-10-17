@@ -20,8 +20,9 @@ library(MASS)
 
 
 #import data 
-claims_data_raw  = read.csv("UNSW_claims_data.csv", header = TRUE)
-earned_data_raw  = read.csv("UNSW_earned_data_adjusted_Sep27.csv", header = TRUE)
+claims_data_raw   = read.csv("UNSW_claims_data.csv", header = TRUE)
+earned_data_raw   = read.csv("UNSW_earned_data_adjusted_Sep27.csv", header = TRUE)
+new_customer_data = read.csv("New_Customers_Pricing_Output_File.csv", header = TRUE)
 
 #CLAIMS DATA ----
 claims_data      = setDT(claims_data_raw)
