@@ -1,15 +1,20 @@
-#CLAIM FREQUENCY
-#GLM
 set.seed(66)
-claim_freq_data = combined_data[exposure > 0, .(claim_count, #add columns after to include pet_de_sexed_age and creative factors
-                                                exposure,
-                                                pet_gender, 
-                                                pet_de_sexed, 
-                                                pet_age_months, 
-                                                pet_age_months_bin,
-                                                nb_state, 
-                                                nb_breed_type)]
+claim_freq_data = final_data[exposure > 0, .(claim_count, #add columns after to include pet_de_sexed_age and creative factors
+                                             exposure,
+                                             pet_gender, 
+                                             pet_de_sexed, 
+                                             pet_de_sexed_age,
+                                             pet_is_switcher,
+                                             pet_age_months, 
+                                             pet_age_months_bin,
+                                             nb_state, 
+                                             nb_breed_type, 
+                                             nb_breed_trait, 
+                                             nb_breed_name_unique,
+                                             condition_category)]
 train_indices  = sample(1:nrow(claim_freq_data), size = 0.7 * nrow(claim_freq_data))
+#make all exposure <1 equal to 1 so neg binomial model offset(log(exposure)) works?? - NEED TO ASK TUTOR 
+claim_freq_data[exposure < 1, exposure := 1]
 
 #poisson
 claim_freq_poisson = glm(claim_count ~ pet_de_sexed + nb_breed_type + pet_age_months + nb_state, 
@@ -30,8 +35,8 @@ summary(claim_freq_quasi)
 anova(claim_freq_quasi, test = "Chisq") #analyse the residual deviance column
 
 #negative binomial
-claim_freq_nbin = glm.nb(claim_count ~ offset(exposure) + pet_de_sexed + nb_breed_type + pet_age_months + nb_state,
-                         data = claim_freq_data, 
+claim_freq_nbin = glm.nb(claim_count ~ offset(log(exposure)) + pet_de_sexed + nb_breed_type + pet_age_months + nb_state,
+                         data = claim_freq_data,
                          subset = train_indices)
 summary(claim_freq_nbin)
 anova(claim_freq_nbin, test = "Chisq") #analyse the residual deviance column
@@ -39,6 +44,7 @@ anova(claim_freq_nbin, test = "Chisq") #analyse the residual deviance column
 
 #QQ plots to compare which distribution to use 
 sample_indices = sample(1:length(train_indices), 5000)
+par(mfrow=c(1,3))
 #poisson
 qqnorm(qresiduals(claim_freq_poisson)[sample_indices],main = "QQ plot Poisson",
        cex.main=0.8, cex.lab=0.8, cex.axis = 0.7)
@@ -49,11 +55,12 @@ qqnorm(qresiduals(claim_freq_quasi)[sample_indices],main = "QQ plot QuasiPoisson
        cex.main=0.8, cex.lab=0.8, cex.axis = 0.7)
 qqline(qresiduals(claim_freq_quasi)[sample_indices],col = "red")
 
-#quasipoisson
+#negative binomial
 qqnorm(qresiduals(claim_freq_nbin)[sample_indices],main = "QQ plot Neg Binomial",
        cex.main=0.8, cex.lab=0.8, cex.axis = 0.7)
 qqline(qresiduals(claim_freq_nbin)[sample_indices],col = "red")
 
+#poisson is best
 
 #Feature Selection 
 claim_freq_full = glm(claim_count ~ offset(log(exposure)) + pet_de_sexed + nb_breed_type + pet_age_months + nb_state,
@@ -101,24 +108,29 @@ y_train_matrix       = as.matrix(y_train)
 x_test_matrix        = model.matrix(~., x_test)
 y_test_matrix        = as.matrix(y_test)
 
+#lasso
 CV_lasso_count       = cv.glmnet(x_train_matrix, y_train_matrix, family = "poisson", type.measure = "auc", alpha = 1, nfolds = 10)
 CV_lasso_plot_count  = plot(CV_lasso_count$glmnet.fit, xvar = "lambda", main = "Lasso", label = T)
 pred_lasso_count     = predict(CV_lasso_count, s = CV_lasso_count$lambda.min, newx = x_test_matrix, type = "response")
 RMSE_lasso_count     = sqrt(mean((pred_lasso_count - data_test$claim_count)^2))
 
+#ridge
 CV_ridge_count       = cv.glmnet(x_train_matrix, y_train_matrix, family = "poisson", type.measure = "auc", alpha = 0, nfolds = 10)
 CV_ridge_plot_count  = plot(CV_ridge_count$glmnet.fit, xvar = "lambda", main = "Ridge", label = T)
 pred_ridge_count     = predict(CV_ridge_count, s = CV_ridge_count$lambda.min, newx = x_test_matrix, type = "response")
 RMSE_ridge_count     = sqrt(mean((pred_ridge_count - data_test$claim_count)^2))
 
+#elastic net
 CV_en_count          = cv.glmnet(x_train_matrix, y_train_matrix, family = "poisson", type.measure = "auc", alpha = 0.5, nfolds = 10)
 CV_en_plot_count     = plot(CV_en_count$glmnet.fit, xvar = "lambda", main = "Elastic Net", label = T)
 pred_en_count        = predict(CV_en_count, s = CV_en_count$lambda.min, newx = x_test_matrix, type = "response")
 RMSE_en_count        = sqrt(mean((pred_en_count - data_test$claim_count)^2))
 
+#coefficients to identify variables on plots
 coefs_count          = coef(CV_lasso_count)@Dimnames[[1]][-1]
 coefs_count          = cbind(1:length(coefs_count), coefs_count)
 
+#compare RMSE
 RMSE_lasso_count
 RMSE_ridge_count 
 RMSE_en_count 
@@ -144,7 +156,7 @@ summary(claim_freq_age_poly)
 anova(claim_freq_age_poly, test = "Chisq") #analyse the residual deviance column
 
 
-#new poisson GLMs to compare with different predictor combinations - NEED TO DO AFTER LEGIT DATASET DONE
+#insert new poisson GLMs to compare with different predictor combinations 
 
 
 #model comparison and evaluation
@@ -158,6 +170,8 @@ poisson_deviance_function = function(model, test_data) {
   return(deviance)
 }
 
+# poisson_deviance_function(claim_freq_poisson, claim_freq_data[-train_indices, ])
+
 RMSE_function = function(model) {
   claim_freq_test = claim_freq_data[-train_indices, ]
   claim_freq_test$actual_claim_count = claim_freq_data[-train_indices, ]$claim_count
@@ -165,4 +179,4 @@ RMSE_function = function(model) {
   RMSE(claim_freq_test$claim_count, claim_freq_data[-train_indices, ]$claim_count)
 }
 
-RMSE_function(claim_freq_poisson)
+# RMSE_function(claim_freq_poisson)
