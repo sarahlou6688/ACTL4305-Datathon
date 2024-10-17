@@ -222,5 +222,11 @@ final_data <- final_data %>%
 #rename earned_units to exposure 
 colnames(final_data)[33] = "exposure"
 
+#add pet age bins column 
+final_data[, pet_age_months_bin := cut(pet_age_months, 
+                                       c(1, 3, 8, 12, 16, 20, 24, 30, 35, 40, 50, 70, 100, 120), 
+                                       labels = c("1-3", "4-8", "9-12", "13-16", "17-20", "21-24", "25-30", "31-35", "36-40", "41-50", "51-70", "71-100", "101-120"), 
+                                       include.lowest = TRUE)]
+
 # View the final combined data
 print(final_data)
