@@ -1,9 +1,9 @@
-#write your name first then paste your code 
+#2. EDA ----
 
-#SARAH -----
+#feature distributions 
 #CLAIM COUNT PLOTS
 claim_count_plot = function(feature) {
-  combined_data %>% 
+  final_data %>% 
     filter(!is.na(claim_id))  %>%
     ggplot() + 
     geom_bar(mapping = aes(x = !!sym(feature), fill = !!sym(feature)), na.rm = T) + 
@@ -19,7 +19,7 @@ claim_count_plot = function(feature) {
 
 #CLAIM FREQUENCY PLOTS
 claim_frequency_plot = function(feature) {
-  claim_freq_data = combined_data %>% 
+  claim_freq_data = final_data %>% 
     group_by(!!sym(feature)) %>%
     summarise(claim_frequency = sum(claim_count, na.rm = T)/sum(exposure)) 
     ggplot(claim_freq_data, aes(x = !!sym(feature), y = claim_frequency, fill = !!sym(feature))) + 
@@ -28,7 +28,7 @@ claim_frequency_plot = function(feature) {
 }
 
 claim_frequency_plot2 = function(feature) {
-  claim_freq_data = combined_data %>% 
+  claim_freq_data = final_data %>% 
     group_by(!!sym(feature)) %>%
     summarise(claim_frequency = sum(claim_count, na.rm = T)/sum(exposure)) 
   ggplot(claim_freq_data, aes(x = !!sym(feature), y = claim_frequency), color = !!sym(feature)) + 
@@ -44,7 +44,7 @@ claim_frequency_plot2 = function(feature) {
 
 #CLAIM PAID PLOTS
 claim_paid_plot = function(feature1, feature2) {
-  ggplot(combined_data) +
+  ggplot(final_data) +
     geom_boxplot(mapping = aes(x = !!sym(feature1), y = !!sym(feature2), fill = !!sym(feature1))) +
     theme(axis.text.x = element_text(angle = 20, hjust = 1), legend.position = "none") + 
     ylim(0, 1000) + #this needs to be checked
@@ -52,7 +52,7 @@ claim_paid_plot = function(feature1, feature2) {
 }
 
 claim_paid_plot2 = function(feature1, feature2) {
-  ggplot(combined_data) +
+  ggplot(final_data) +
     geom_point(mapping = aes(x = !!sym(feature1), y = !!sym(feature2), color = nb_breed_type)) +
     labs(title = paste0(feature1, " vs ", feature2)) 
 }
@@ -66,7 +66,7 @@ claim_paid_plot2 = function(feature1, feature2) {
 
 #CLAIM SEVERITY PLOTS
 claim_severity_plot = function(feature) {
-  claim_severity_data = combined_data %>% 
+  claim_severity_data = final_data %>% 
     group_by(!!sym(feature)) %>%
     summarise(claim_severity = sum(claim_paid, na.rm = T)/sum(claim_count, na.rm = T))
   ggplot(claim_severity_data, aes(x = !!sym(feature), y = claim_severity, fill = !!sym(feature))) + 
@@ -75,7 +75,7 @@ claim_severity_plot = function(feature) {
 }
 
 claim_severity_plot2 = function(feature) {
-  claim_severity_data = combined_data %>% 
+  claim_severity_data = final_data %>% 
     group_by(!!sym(feature)) %>%
     summarise(claim_severity = sum(claim_paid, na.rm = T)/sum(claim_count, na.rm = T))
   ggplot(claim_severity_data, aes(x = !!sym(feature), y = claim_severity)) + 
@@ -90,80 +90,7 @@ claim_severity_plot2 = function(feature) {
 # claim_severity_plot2("pet_age_months")
 
 #correlation matrix 
-corr_data  = combined_data[, .(pet_age_months, nb_breed_type, pet_de_sexed, claim_paid)]
+corr_data  = final_data[, .(pet_age_months, nb_breed_type, pet_de_sexed, nb_state, claim_paid)]
 model.matrix(~0+., data = corr_data) %>% 
   cor(use = "pairwise.complete.obs") %>% 
   ggcorrplot(show.diag = FALSE, type = "lower", lab = TRUE, lab_size = 2)
-
-
-
-#PRITHIKA ---- 
-#Claims dataset
-#Importing claims dataset
-library(readr)
-claims_data <- read_csv("Desktop/Assignment/Assignment Data Download (Confidential Insurance Data)-20240921/UNSW_claims_data.csv")
-
-#Import earned dataset
-library(readr)
-earned_data <- read_csv("Desktop/Assignment/Assignment Data Download (Confidential Insurance Data)-20240921/UNSW_earned_data.csv")
-View(earned_data)
-
-
-#Inspecting claims dataset
-View(claims_data)
-str(claims_data) #all structures are fine
-dim(claims_data) #3487 rows x 8 columns
-head(claims_data)
-tail(claims_data)
-is.na(claims_data)
-
-#Claims count for different types of conditions
-# Barplot of claim exposure using ggplot2
-count = nrow(claims_data)
-ggplot(claims_data, aes(x = condition_category)) +
-  geom_bar(fill="skyblue4",colour="black") +
-  labs(title = "Barplot of Claim Count for Different Conditions", x = "Condition", y = "Count") + theme_minimal() +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
-  
-# Density of claim exposure using ggplot2
-count = nrow(claims_data)
-ggplot(claims_data, aes(x = condition_category)) +
-  geom_density(fill="skyblue4",alpha=0.5) +
-  labs(title = "Density of Claim Count for Different Conditions", x = "Condition", y = "Count") + theme_minimal() +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
-
-
-#Density of tenures
-ggplot(claims_data, aes(x = tenure)) +
-  geom_density(fill="skyblue4", alpha = 0.75) + theme_minimal()+theme(plot.title = element_text(hjust = 0.5)) +
-  ggtitle("Density of Tenure") +
-  xlab("Tenure")
-  
-#Claim amount and tenure
-ggplot(claims_data ,aes(x = tenure, y = total_claim_amount)) +
-  geom_point(colour = "skyblue4") + theme(axis.title=element_text(size=1.5,face="bold")) +
-  labs(title = "Claim Amount Against Tenure", x = "Tenure", y = "Claim Amount") + theme_minimal()
-
-
-#Claim status and category
-categorical_variables_claims <- table(claims_data$condition_category, claims_data$claim_status)
-View(categorical_variables_claims)
-
-
-#Relationship between Condition category and claim status
-ggplot(claims_data, aes(x = condition_category, y = claim_status, fill = claim_status)) +
-  geom_bar(stat = "identity") +
-  labs(title = "Stacked Bar Plot of Condition as per Status", x = "Conditions", y = "Status") +
-  theme_minimal() + theme(
-    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),  # Adjust x-axis text
-    axis.text.y = element_text(size = 0)  # Adjust y-axis text size (you can customize further))
-  
-
-#Correlation 
-str(claims_data)
-
-correlation_data <- claims_data %>% select(tenure, claim_paid, total_claim_amount)
-correlation_matrix <- cor(correlation_data, method = "pearson")
-print(correlation_matrix)
-View(correlation_matrix)
-
