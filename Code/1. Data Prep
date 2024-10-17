@@ -16,6 +16,7 @@ library(doParallel)
 library(Rcpp)
 library(statmod)
 library(MLmetrics)
+library(MASS)
 
 
 #import data 
@@ -146,7 +147,7 @@ earned <- earned %>%
 
 # Drop the extra mode column if not needed
 earned <- earned %>%
-  select(-pet_de_sexed_age_mode)
+  dplyr::select(-pet_de_sexed_age_mode)
 
 #Randomise Values for not sure
 set.seed(1060)
@@ -228,5 +229,4 @@ final_data[, pet_age_months_bin := cut(pet_age_months,
                                        labels = c("1-3", "4-8", "9-12", "13-16", "17-20", "21-24", "25-30", "31-35", "36-40", "41-50", "51-70", "71-100", "101-120"), 
                                        include.lowest = TRUE)]
 
-# View the final combined data
 print(final_data)
