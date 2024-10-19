@@ -239,6 +239,11 @@ final_data[, pet_age_months_bin := cut(pet_age_months,
                                        labels = c("1-3", "4-8", "9-12", "13-16", "17-20", "21-24", "25-30", "31-35", "36-40", "41-50", "51-70", "71-100", "101-120"), 
                                        include.lowest = TRUE)]
 
+final_data[, owner_age_years_bin := cut(owner_age_years, 
+                                       c(18, 21, 25, 30, 35, 45, 55, 70, 90, 110), 
+                                       labels = c("18-21", "22-25", "26-30", "31-35", "36-45", "46-55", "56-70", "71-90", "91-110"), 
+                                       include.lowest = TRUE)]
+
 #change columns to factors 
 final_data[, `:=` (pet_de_sexed = as.factor(pet_de_sexed), 
                    pet_de_sexed_age = as.factor(pet_de_sexed_age), 
