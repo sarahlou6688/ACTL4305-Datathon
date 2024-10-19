@@ -1,45 +1,57 @@
+
 set.seed(66)
-claim_freq_data = final_data[exposure > 0, .(claim_count, #add columns after to include pet_de_sexed_age and creative factors
+claim_freq_data = final_data[exposure > 0, .(claim_count, #add creative factors
                                              exposure,
                                              pet_gender, 
                                              pet_de_sexed, 
                                              pet_de_sexed_age,
-                                             pet_is_switcher,
-                                             pet_age_months, 
-                                             pet_age_months_bin,
+                                             pet_is_switcher, 
                                              nb_state, 
                                              nb_breed_type, 
-                                             nb_breed_trait, 
-                                             nb_breed_name_unique,
-                                             condition_category)]
+                                             nb_breed_trait,
+                                             nb_number_of_breeds,
+                                             nb_average_breed_size, 
+                                             pet_age_months, 
+                                             pet_age_months_bin,
+                                             owner_age_years, 
+                                             owner_age_years_bin)]
 train_indices  = sample(1:nrow(claim_freq_data), size = 0.7 * nrow(claim_freq_data))
 #make all exposure <1 equal to 1 so neg binomial model offset(log(exposure)) works?? - NEED TO ASK TUTOR 
 claim_freq_data[exposure < 1, exposure := 1]
 
 #poisson
-claim_freq_poisson = glm(claim_count ~ pet_de_sexed + nb_breed_type + pet_age_months + nb_state, 
+claim_freq_poisson = glm(claim_count ~ pet_gender + pet_de_sexed + pet_de_sexed_age + pet_is_switcher +
+                                       nb_state + nb_breed_type + nb_breed_trait + nb_number_of_breeds + 
+                                       nb_average_breed_size + pet_age_months + owner_age_years, 
                          data = claim_freq_data, 
                          subset = train_indices, 
                          offset = log(exposure), 
                          family = poisson(link = "log"))
 summary(claim_freq_poisson)
-anova(claim_freq_poisson, test = "Chisq") #analyse the residual deviance column
+anova(claim_freq_poisson, test = "Chisq") ##AIC = 
 
 #quasipoisson
-claim_freq_quasi = glm(claim_count ~ pet_de_sexed + nb_breed_type + pet_age_months + nb_state, 
+claim_freq_quasi = glm(claim_count ~ pet_gender + pet_de_sexed + pet_de_sexed_age + pet_is_switcher +
+                                     nb_state + nb_breed_type + nb_breed_trait + nb_number_of_breeds + 
+                                     nb_average_breed_size + pet_age_months + owner_age_years, 
                        data = claim_freq_data, 
                        subset = train_indices, 
                        offset = log(exposure), 
                        family = quasipoisson(link = "log"))
 summary(claim_freq_quasi)
-anova(claim_freq_quasi, test = "Chisq") #analyse the residual deviance column
+anova(claim_freq_quasi, test = "Chisq") 
 
 #negative binomial
-claim_freq_nbin = glm.nb(claim_count ~ offset(log(exposure)) + pet_de_sexed + nb_breed_type + pet_age_months + nb_state,
+claim_freq_nbin = glm.nb(claim_count ~ offset(log(exposure)) + pet_gender + pet_de_sexed + pet_de_sexed_age + pet_is_switcher + 
+                                       nb_state + nb_breed_type + nb_breed_trait + nb_number_of_breeds + 
+                                       nb_average_breed_size + pet_age_months + owner_age_years, 
                          data = claim_freq_data,
                          subset = train_indices)
 summary(claim_freq_nbin)
-anova(claim_freq_nbin, test = "Chisq") #analyse the residual deviance column
+anova(claim_freq_nbin, test = "Chisq") ##AIC = 
+
+##variables with significant drop in residual deviance: 
+##1. pet_age_months, pet_de_sexed, , owner_age_years, nb_treed_trait, pet_is_switcher
 
 
 #QQ plots to compare which distribution to use 
@@ -60,10 +72,28 @@ qqnorm(qresiduals(claim_freq_nbin)[sample_indices],main = "QQ plot Neg Binomial"
        cex.main=0.8, cex.lab=0.8, cex.axis = 0.7)
 qqline(qresiduals(claim_freq_nbin)[sample_indices],col = "red")
 
-#poisson is best
+##poisson is best based on AIC and QQ plot
 
-#Feature Selection 
-claim_freq_full = glm(claim_count ~ offset(log(exposure)) + pet_de_sexed + nb_breed_type + pet_age_months + nb_state,
+
+#FEATURE IMPORTANCE methods
+#random forest 
+data_train  = claim_freq_data[train_indices,] 
+
+rf = randomForest(claim_count ~ pet_gender + pet_de_sexed + pet_de_sexed_age + pet_is_switcher + 
+                                nb_state + nb_breed_type + nb_breed_trait + nb_number_of_breeds + 
+                                nb_average_breed_size + pet_age_months + owner_age_years, 
+                  data = data_train, 
+                  importance = TRUE, 
+                  na.action = na.roughfix)
+varImpPlot(rf, main = "Feature Importance")
+
+##pet_age_months, nb_breed_trait, owner_age_years, nb_state, nb_average_breed_size
+
+
+#AIC & BIC
+claim_freq_full = glm(claim_count ~ offset(log(exposure)) + pet_gender + pet_de_sexed + pet_de_sexed_age + pet_is_switcher + 
+                        nb_state + nb_breed_type + nb_breed_trait + nb_number_of_breeds + 
+                        nb_average_breed_size + pet_age_months + owner_age_years, 
                        data = claim_freq_data, 
                        subset = train_indices, 
                        family = poisson(link = "log"))
@@ -78,50 +108,58 @@ claim_freq_aic_back = stepAIC(claim_freq_full,
                               direction = "backward",
                               k = 2, # set k = 2 for AIC; k = log(n) for BIC
                               scope = list(upper = claim_freq_full, lower = claim_freq_none))
-#AIC forward 
-claim_freq_aic_fwd  = stepAIC(claim_freq_none,
-                              direction = "forward",
-                              k = 2, # set k = 2 for AIC; k = log(n) for BIC
-                              scope = list(upper = claim_freq_full, lower = claim_freq_none))
-#BIC backward 
+##claim_count ~ nb_average_breed_size + pet_age_months + owner_age_years + offset(log(exposure)) ##9130
+
+#BIC backward
 n = nrow(claim_freq_data)
 claim_freq_bic_back = stepAIC(claim_freq_full,
                               direction = "backward",
                               k = log(n), # set k = 2 for AIC; k = log(n) for BIC
                               scope = list(upper = claim_freq_full, lower = claim_freq_none))
-#BIC forward
-claim_freq_bic_back = stepAIC(claim_freq_none,
-                              direction = "forward",
-                              k = log(n), # set k = 2 for AIC; k = log(n) for BIC
-                              scope = list(upper = claim_freq_full, lower = claim_freq_none))
+##claim_count ~ pet_age_months + owner_age_years + offset(log(exposure)) ##AIC = 9158.96
 
-#regularisation methods
-x_train              = claim_freq_data[train_indices, -1] 
-y_train              = claim_freq_data[train_indices, 1] 
-data_train           = claim_freq_data[train_indices,] 
-x_test               = claim_freq_data[-train_indices, -1] 
-y_test               = claim_freq_data[-train_indices, 1] 
-data_test            = claim_freq_data[-train_indices,] 
+
+#shrinkage techniques
+claim_freq_data_new = claim_freq_data[, .(claim_count, #add creative factors
+                                          exposure,
+                                          pet_age_months, 
+                                          owner_age_years, 
+                                          nb_average_breed_size, 
+                                          nb_breed_trait, 
+                                          nb_state, 
+                                          pet_is_switcher,
+                                          pet_de_sexed, 
+                                          pet_age_months_bin, 
+                                          owner_age_years_bin)]
+train_indices_new = sample(1:nrow(claim_freq_data_new), size = 0.7 * nrow(claim_freq_data_new))
+
+x_train              = claim_freq_data_new[train_indices_new, -1] 
+y_train              = claim_freq_data_new[train_indices_new, 1] 
+data_train           = claim_freq_data_new[train_indices_new,] 
+x_test               = claim_freq_data_new[-train_indices_new, -1] 
+y_test               = claim_freq_data_new[-train_indices_new, 1] 
+data_test            = claim_freq_data_new[-train_indices_new,] 
 
 x_train_matrix       = model.matrix(~., x_train)
 y_train_matrix       = as.matrix(y_train)
 x_test_matrix        = model.matrix(~., x_test)
 y_test_matrix        = as.matrix(y_test)
 
+par(mfrow=c(1,3))
 #lasso
-CV_lasso_count       = cv.glmnet(x_train_matrix, y_train_matrix, family = "poisson", type.measure = "auc", alpha = 1, nfolds = 10)
+CV_lasso_count       = cv.glmnet(x_train_matrix, y_train_matrix, family = "poisson", type.measure = "deviance", alpha = 1, nfolds = 10)
 CV_lasso_plot_count  = plot(CV_lasso_count$glmnet.fit, xvar = "lambda", main = "Lasso", label = T)
 pred_lasso_count     = predict(CV_lasso_count, s = CV_lasso_count$lambda.min, newx = x_test_matrix, type = "response")
 RMSE_lasso_count     = sqrt(mean((pred_lasso_count - data_test$claim_count)^2))
 
 #ridge
-CV_ridge_count       = cv.glmnet(x_train_matrix, y_train_matrix, family = "poisson", type.measure = "auc", alpha = 0, nfolds = 10)
+CV_ridge_count       = cv.glmnet(x_train_matrix, y_train_matrix, family = "poisson", type.measure = "deviance", alpha = 0, nfolds = 10)
 CV_ridge_plot_count  = plot(CV_ridge_count$glmnet.fit, xvar = "lambda", main = "Ridge", label = T)
 pred_ridge_count     = predict(CV_ridge_count, s = CV_ridge_count$lambda.min, newx = x_test_matrix, type = "response")
 RMSE_ridge_count     = sqrt(mean((pred_ridge_count - data_test$claim_count)^2))
 
 #elastic net
-CV_en_count          = cv.glmnet(x_train_matrix, y_train_matrix, family = "poisson", type.measure = "auc", alpha = 0.5, nfolds = 10)
+CV_en_count          = cv.glmnet(x_train_matrix, y_train_matrix, family = "poisson", type.measure = "deviance", alpha = 0.5, nfolds = 10)
 CV_en_plot_count     = plot(CV_en_count$glmnet.fit, xvar = "lambda", main = "Elastic Net", label = T)
 pred_en_count        = predict(CV_en_count, s = CV_en_count$lambda.min, newx = x_test_matrix, type = "response")
 RMSE_en_count        = sqrt(mean((pred_en_count - data_test$claim_count)^2))
@@ -135,28 +173,36 @@ RMSE_lasso_count
 RMSE_ridge_count 
 RMSE_en_count 
 
+#refit glm with subset of variables 
+claim_freq_poisson_new = glm(claim_count ~ pet_age_months + owner_age_years + nb_breed_trait, 
+                             data = claim_freq_data_new, 
+                             subset = train_indices_new, 
+                             offset = log(exposure), 
+                             family = poisson(link = "log"))
+summary(claim_freq_poisson_new)
+anova(claim_freq_poisson_new, test = "Chisq") ##AIC = 
 
 #transformation of variables - first plot to see the graphical relationship 
 claim_frequency_plot2("pet_age_months")
-#refit glm with age as binned category
-claim_freq_age_bin = glm(claim_count ~ pet_de_sexed + nb_breed_type + pet_age_months_bin + nb_state, 
-                         data = claim_freq_data, 
-                         subset = train_indices, 
+claim_frequency_plot2("owner_age_years")
+#refit glm with ages as binned categories
+claim_freq_age_bin = glm(claim_count ~ pet_age_months_bin + owner_age_years_bin + nb_breed_trait + nb_average_breed_size + nb_state, 
+                         data = claim_freq_data_new, 
+                         subset = train_indices_new, 
                          offset = log(exposure), 
                          family = poisson(link = "log"))
 summary(claim_freq_age_bin)
-anova(claim_freq_age_bin, test = "Chisq") #analyse the residual deviance column
+anova(claim_freq_age_bin, test = "Chisq") ##AIC = 
+
 #refit glm with polynomial age terms
-claim_freq_age_poly = glm(claim_count ~ pet_de_sexed + nb_breed_type + pet_age_months + I(pet_age_months^2) + nb_state, 
-                         data = claim_freq_data, 
-                         subset = train_indices, 
+claim_freq_age_poly = glm(claim_count ~ pet_age_months + I(pet_age_months^2) + owner_age_years + nb_breed_trait + nb_average_breed_size + nb_state, 
+                         data = claim_freq_data_new, 
+                         subset = train_indices_new, 
                          offset = log(exposure), 
                          family = poisson(link = "log"))
 summary(claim_freq_age_poly)
-anova(claim_freq_age_poly, test = "Chisq") #analyse the residual deviance column
+anova(claim_freq_age_poly, test = "Chisq") ##AIC = 9101.3
 
-
-#insert new poisson GLMs to compare with different predictor combinations 
 
 
 #model comparison and evaluation
@@ -170,13 +216,13 @@ poisson_deviance_function = function(model, test_data) {
   return(deviance)
 }
 
-# poisson_deviance_function(claim_freq_poisson, claim_freq_data[-train_indices, ])
+# poisson_deviance_function(claim_freq_poisson, claim_freq_data_new[-train_indices_new, ])
 
 RMSE_function = function(model) {
-  claim_freq_test = claim_freq_data[-train_indices, ]
-  claim_freq_test$actual_claim_count = claim_freq_data[-train_indices, ]$claim_count
+  claim_freq_test = claim_freq_data_new[-train_indices_new, ]
+  claim_freq_test$actual_claim_count = claim_freq_data_new[-train_indices_new, ]$claim_count
   claim_freq_test$claim_count = predict(model, newdata = claim_freq_test, type = "response")
-  RMSE(claim_freq_test$claim_count, claim_freq_data[-train_indices, ]$claim_count)
+  RMSE(claim_freq_test$claim_count, claim_freq_data_new[-train_indices_new, ]$claim_count)
 }
 
-# RMSE_function(claim_freq_poisson)
+# RMSE_function(claim_freq_poisson_new)
