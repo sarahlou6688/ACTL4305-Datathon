@@ -11,12 +11,6 @@ claim_count_plot = function(feature) {
     labs(title = feature)
 }
 
-# claim_count_plot("condition_category")
-# claim_count_plot("pet_gender")
-# claim_count_plot("pet_de_sexed")
-# claim_count_plot("nb_state")
-# claim_count_plot("nb_breed_type")
-
 #CLAIM FREQUENCY PLOTS
 claim_frequency_plot = function(feature) {
   claim_freq_data = final_data %>% 
@@ -38,9 +32,19 @@ claim_frequency_plot2 = function(feature) {
 
 # claim_frequency_plot("pet_gender")
 # claim_frequency_plot("pet_de_sexed")
+# claim_frequency_plot("pet_de_sexed_age")
+# claim_frequency_plot("pet_is_switcher")
 # claim_frequency_plot("nb_state")
 # claim_frequency_plot("nb_breed_type")
+# claim_frequency_plot("condition_category")
+# claim_frequency_plot("claim_status")
+# claim_frequency_plot("nb_number_of_breeds")
+# claim_frequency_plot("nb_average_breed_size")
+# claim_frequency_plot("nb_breed_trait")
 # claim_frequency_plot2("pet_age_months")
+# claim_frequency_plot2("tenure")
+# claim_frequency_plot2("owner_age_years")
+
 
 #CLAIM PAID PLOTS
 claim_paid_plot = function(feature1, feature2) {
@@ -56,13 +60,6 @@ claim_paid_plot2 = function(feature1, feature2) {
     geom_point(mapping = aes(x = !!sym(feature1), y = !!sym(feature2), color = nb_breed_type)) +
     labs(title = paste0(feature1, " vs ", feature2)) 
 }
-
-# claim_paid_plot("condition_category", "claim_paid")
-# claim_paid_plot("pet_gender", "claim_paid")
-# claim_paid_plot("pet_de_sexed", "claim_paid")
-# claim_paid_plot("nb_state", "claim_paid")
-# claim_paid_plot("nb_breed_type", "claim_paid")
-# claim_paid_plot2("pet_age_months", "claim_paid")
 
 #CLAIM SEVERITY PLOTS
 claim_severity_plot = function(feature) {
@@ -85,9 +82,19 @@ claim_severity_plot2 = function(feature) {
 
 # claim_severity_plot("pet_gender")
 # claim_severity_plot("pet_de_sexed")
+# claim_severity_plot("pet_de_sexed_age")
+# claim_severity_plot("pet_is_switcher")
 # claim_severity_plot("nb_state")
 # claim_severity_plot("nb_breed_type")
+# claim_severity_plot("condition_category")
+# claim_severity_plot("claim_status")
+# claim_severity_plot("nb_number_of_breeds")
+# claim_severity_plot("nb_average_breed_size")
+# claim_severity_plot("nb_breed_trait")
 # claim_severity_plot2("pet_age_months")
+# claim_severity_plot2("tenure")
+# claim_severity_plot2("owner_age_years")
+
 
 #correlation matrix 
 corr_data  = final_data[, .(pet_age_months, nb_breed_type, pet_de_sexed, nb_state, claim_paid)]
