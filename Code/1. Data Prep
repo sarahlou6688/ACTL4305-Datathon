@@ -246,5 +246,8 @@ final_data[, `:=` (pet_de_sexed = as.factor(pet_de_sexed),
                    nb_breed_type = as.factor(nb_breed_type), 
                    nb_breed_trait = as.factor(nb_breed_trait))]
 
+#make NA values for owner_age_years the median
+final_data[is.na(owner_age_years) == T, owner_age_years := median(owner_age_years)]
+
 final_data <- final_data[, -c(10)]
 print(final_data)
