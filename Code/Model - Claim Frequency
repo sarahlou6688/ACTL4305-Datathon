@@ -204,11 +204,10 @@ summary(claim_freq_age_poly)
 anova(claim_freq_age_poly, test = "Chisq") ##AIC = 9101.3
 
 
-
 #model comparison and evaluation
-poisson_deviance_function = function(model, test_data) {
+poisson_deviance_function = function(model) {
   # Predict on the test set using the model
-  predicted_values = predict(model, newdata = test_data, type = "response")
+  predicted_values = predict(model, newdata = claim_freq_data_new[-train_indices_new, ], type = "response")
   # Extract the observed values
   observed_values = test_data$claim_count
   # Compute the Poisson deviance
@@ -216,7 +215,9 @@ poisson_deviance_function = function(model, test_data) {
   return(deviance)
 }
 
-# poisson_deviance_function(claim_freq_poisson, claim_freq_data_new[-train_indices_new, ])
+# poisson_deviance_function(claim_freq_poisson_new)
+# poisson_deviance_function(claim_freq_age_bin)
+# poisson_deviance_function(claim_freq_age_poly)
 
 RMSE_function = function(model) {
   claim_freq_test = claim_freq_data_new[-train_indices_new, ]
@@ -226,3 +227,81 @@ RMSE_function = function(model) {
 }
 
 # RMSE_function(claim_freq_poisson_new)
+# RMSE_function(claim_freq_age_bin)
+# RMSE_function(claim_freq_age_poly)
+
+
+#decile plots 
+decile_plot_function = function(model) {
+  
+claim_freq_train                    = claim_freq_data_new[train_indices_new, ]
+claim_freq_train$actual_claim_count = claim_freq_train$claim_count
+claim_freq_train$claim_count        = predict(model, newdata = claim_freq_train, type = "response")
+claim_freq_train$pred_claim_count   = claim_freq_train$claim_count
+claim_freq_train$claim_count        = claim_freq_train$actual_claim_count
+
+claim_freq_test                     = claim_freq_data_new[-train_indices_new, ]
+claim_freq_test$actual_claim_count  = claim_freq_test$claim_count
+claim_freq_test$claim_count         = predict(model, newdata = claim_freq_test, type = "response")
+claim_freq_test$pred_claim_count    = claim_freq_test$claim_count
+claim_freq_test$claim_count         = claim_freq_test$actual_claim_count
+
+decile_fulltrain                    = claim_freq_train
+decile_fulltest                     = claim_freq_test  
+
+claim_freq_train_sorted = decile_fulltrain %>%
+  arrange(pred_claim_count/exposure)
+
+claim_freq_test_sorted = decile_fulltest %>%
+  arrange(pred_claim_count/exposure)
+
+total_exposure_train = sum(claim_freq_train_sorted$exposure)
+total_exposure_test  = sum(claim_freq_test_sorted$exposure)
+
+claim_freq_train_sorted = claim_freq_train_sorted  %>%
+  mutate(cum_exposure = cumsum(exposure),
+         decile = cut(cum_exposure, breaks = seq(0, total_exposure_train, length.out = 11),
+                      include.lowest = TRUE, labels = FALSE))
+
+claim_freq_test_sorted = claim_freq_test_sorted %>%
+  mutate(cum_exposure = cumsum(exposure),
+         decile = cut(cum_exposure, breaks = seq(0, total_exposure_test, length.out = 11),
+                      include.lowest = TRUE, labels = FALSE))
+
+decile_summarytrain = claim_freq_train_sorted %>%
+  group_by(decile) %>%
+  summarise(
+    avg_pred_claim_count = sum(pred_claim_count)/sum(exposure),
+    avg_actual_claim_count= sum(actual_claim_count)/sum(exposure)
+  )
+
+decile_summarytest = claim_freq_test_sorted %>%
+  group_by(decile) %>%
+  summarise(
+    avg_pred_claim_count = sum(pred_claim_count)/sum(exposure),
+    avg_actual_claim_count= sum(actual_claim_count)/sum(exposure)
+  )
+
+train = ggplot(decile_summarytrain, aes(x = factor(decile))) +
+  geom_line(aes(y = avg_pred_claim_count, group = 1, color = "Predicted"), size = 1.2) +
+  geom_line(aes(y = avg_actual_claim_count, group = 1, color = "Actual"), size = 1.2) +
+  labs(x = "Decile", y = "Claim Frequency", title = "Decile Plot: Actual vs Predicted (Train Set)") +
+  theme_minimal() +
+  guides(color = guide_legend(title = NULL))
+
+test = ggplot(decile_summarytest, aes(x = factor(decile))) +
+  geom_line(aes(y = avg_pred_claim_count, group = 1, color = "Predicted"), size = 1.2) +
+  geom_line(aes(y = avg_actual_claim_count, group = 1, color = "Actual"), size = 1.2) +
+  labs(x = "Decile", y = "Claim Frequency", title = "Decile Plot: Actual vs Predicted (Test Set)") +
+  theme_minimal() +
+  guides(color = guide_legend(title = NULL))
+
+grid.arrange(train, test, nrow = 1)
+
+}
+
+# decile_plot_function(claim_freq_poisson_new)
+# decile_plot_function(claim_freq_age_bin)
+# decile_plot_function(claim_freq_age_poly)
+
+             
