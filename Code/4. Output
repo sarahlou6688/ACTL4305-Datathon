@@ -1,1 +1,5 @@
 
+setDT(new_customer_data)
+
+#only keep dog rows
+new_customer_data = new_customer_data[!(nb_breed_trait %in% c("siamese", "forest cat", "spotted cats", "persian", "burmese"))]
