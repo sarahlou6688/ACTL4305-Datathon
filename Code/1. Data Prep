@@ -257,3 +257,163 @@ final_data[is.na(owner_age_years) == T, owner_age_years := median(owner_age_year
 
 final_data <- final_data[, -c(10)]
 print(final_data)
+
+
+
+
+#########
+### CREATIVE FACTOR 1: Remaining years
+# Create a new column 'lifetime' based on the value of 'nb_average_breed_size'
+final_data$lifetime <- with(final_data, ifelse(nb_average_breed_size == 1, 9.51,
+                                                     ifelse(nb_average_breed_size == 2, 11.51,
+                                                            ifelse(nb_average_breed_size == 3, 12.7,
+                                                                   ifelse(nb_average_breed_size == 4, 13.53, NA)))))
+
+# Display the first few rows to check the results
+head(final_data)
+
+#####
+# Assuming 'final_data' dataset has 'lifetime' and 'pet_age_months' columns
+
+# First, ensure the 'pet_age_months' is available, then calculate the remaining lifetime
+final_data$remaining_lifetime <- with(final_data, lifetime - (pet_age_months / 12))
+
+# Display the first few rows to check the results
+head(final_data)
+
+
+###CREATIVE FACTOR 2: Medinal_household_income
+postcode_mapping<-read.csv("Postcode mapping.csv", header = TRUE)
+
+
+postcode_mapping <- postcode_mapping %>%
+  distinct(POSTCODE, .keep_all = TRUE)
+
+
+final_data <- final_data %>%
+  left_join(postcode_mapping, by = c("nb_postcode" = "POSTCODE"), relationship = "many-to-many")
+
+
+final_data <- final_data %>%
+  mutate(SA4_CODE_2011 = ifelse(is.na(SA4_CODE_2011), "Not Found", SA4_CODE_2011))
+
+median_household_income<-read.csv("median_household_income.csv", header = TRUE)
+
+
+# Perform the left join to map Median equivalised total household income to final_data
+final_data <- final_data %>%
+  mutate(SA4_CODE_2011 = as.integer(SA4_CODE_2011))
+
+final_data <- final_data %>%
+  left_join(median_household_income, by = c("SA4_CODE_2011" = "SA_code"))
+
+final_data <- final_data %>%
+  mutate(`Median equivalised total household income (weekly)` = ifelse(is.na(`Median equivalised total household income (weekly)`), "Not Available", `Median equivalised total household income (weekly)`))
+
+final_data$Median_weekly_household_income_1 <- as.numeric(gsub(",", "", final_data$Median.equivalised.total.household.income..weekly....))
+
+
+###CREATIVE FACTOR 3: Claim_Behaviour_factor
+
+final_data <- final_data %>%
+  mutate(claim_behavior_factor = case_when(
+    tenure >= 5 & claim_count == 1 & pet_is_switcher == "FALSE" ~ "Loyal Low Risk",
+    tenure >= 3 & claim_count <2 & pet_is_switcher == "FALSE" ~ "Moderate Risk",
+    pet_is_switcher == "TRUE" & claim_count >=2 ~ "High Risk Switcher",
+    TRUE ~ "New or Unknown Risk"
+  ))
+
+summary(final_data)
+
+final_data %>%
+  count(claim_behavior_factor)
+
+#EDA 1- Remaining Years
+
+claim_count_plot = function(feature) {
+  final_data %>%
+    filter(!is.na(claim_id)) %>%
+    ggplot() + 
+    geom_bar(mapping = aes(x = !!sym(feature), y = (..count..) / sum(..count..), fill = !!sym(feature)), 
+             na.rm = TRUE, color = "darkgray") +  # Dark gray outlines for the bars
+    theme_minimal() +  # Minimal theme for clarity
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 12),  # Rotate x-axis labels for better readability
+      plot.title = element_text(hjust = 0.5, size = 16, face = "bold")  # Bold and centered title
+    ) + 
+    labs(
+      title = paste("Distribution of", feature),  # Add a dynamic title
+      x = feature, 
+      y = "Proportion of claim count"
+    )
+}
+
+# Example usage for "remaining_lifetime"
+claim_count_plot("remaining_lifetime")
+
+#EDA 2- Median weekly household income
+
+claim_severity_plot2 = function(feature) {
+  claim_severity_data = final_data %>% 
+    group_by(!!sym(feature)) %>%
+    summarise(claim_severity = sum(claim_paid, na.rm = TRUE) / sum(claim_count, na.rm = TRUE))
+  
+  ggplot(claim_severity_data, aes(x = !!sym(feature), y = claim_severity)) + 
+    geom_point(color = "blue", size = 3) +  # Blue points with size adjustment for visibility
+    labs(
+      title = "Claim Severity of Median Weekly Household Income",  # Custom title
+      x = "Median Household Income",  # Custom x-axis label
+      y = "Claim Severity"  # y-axis label for clarity
+    ) + 
+    theme_minimal() +  # Clean, minimalistic theme
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 16, face = "bold", color = "darkblue"),  # Centered, bold title
+      axis.text.x = element_text(size = 12, color = "black"),  # X-axis text size
+      axis.text.y = element_text(size = 12, color = "black"),  # Y-axis text size
+      axis.title.x = element_text(size = 14, face = "bold", color = "black"),  # Bold x-axis label
+      axis.title.y = element_text(size = 14, face = "bold", color = "black")  # Bold y-axis label
+    )
+}
+
+# Example usage with "Median.equivalised.total.household.income..weekly...."
+claim_severity_plot2("Median_weekly_household_income_1")
+
+#EDA 3- Claim Behaviour Factor
+
+library(ggplot2)
+library(viridis)
+
+
+claim_frequency_plot = function(feature) {
+  claim_freq_data = final_data %>% 
+    group_by(!!sym(feature)) %>%
+    summarise(claim_frequency = sum(claim_count, na.rm = TRUE) / sum(exposure))
+  
+  ggplot(claim_freq_data, aes(x = !!sym(feature), y = claim_frequency, fill = claim_frequency)) + 
+    geom_col(color = "darkgray", width = 0.7) +  # Add dark gray borders to the bars and adjust width
+    scale_fill_gradientn(colors = c("yellow", "orange", "red", "darkred")) +  # Warm color gradient
+    labs(
+      title = paste("Claim Frequency by", feature),  # Descriptive title
+      x = feature, 
+      y = "Claim Frequency"
+    ) + 
+    theme_minimal() +  # Clean and minimalistic theme
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 16, face = "bold", color = "darkblue"),  # Centered, bold title
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 12, color = "black"),  # Rotate x-axis labels for readability
+      axis.text.y = element_text(size = 12, color = "black"),  # Larger y-axis labels for clarity
+      axis.title.x = element_text(size = 14, face = "bold", color = "black"),  # Bold x-axis title
+      axis.title.y = element_text(size = 14, face = "bold", color = "black"),  # Bold y-axis title
+      panel.grid.major = element_line(color = "grey85"),  # Soft grey grid lines for better readability
+      panel.grid.minor = element_blank(),  # Remove minor grid lines for a cleaner look
+      plot.background = element_rect(fill = "white"),  # White background for clarity
+      legend.position = "none"  # Hide legend for simplicity
+    )
+}
+
+# Example usage for "claim_behavior_factor"
+claim_frequency_plot("claim_behavior_factor")
+
+
+
+
