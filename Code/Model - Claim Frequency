@@ -1,4 +1,6 @@
 
+#CLAIM FREQUENCY
+#GLM
 set.seed(66)
 claim_freq_data = final_data[exposure > 0, .(claim_count, #add creative factors
                                              exposure,
@@ -14,15 +16,23 @@ claim_freq_data = final_data[exposure > 0, .(claim_count, #add creative factors
                                              pet_age_months, 
                                              pet_age_months_bin,
                                              owner_age_years, 
-                                             owner_age_years_bin)]
+                                             owner_age_years_bin, 
+                                             remaining_lifetime, 
+                                             median_weekly_household_income, 
+                                             claim_behavior_factor)]
 train_indices  = sample(1:nrow(claim_freq_data), size = 0.7 * nrow(claim_freq_data))
 #make all exposure <1 equal to 1 so neg binomial model offset(log(exposure)) works?? - NEED TO ASK TUTOR 
 claim_freq_data[exposure < 1, exposure := 1]
 
+#check if mean and var are same to use poisson
+mean(claim_freq_data$claim_count)
+var(claim_freq_data$claim_count)
+
 #poisson
 claim_freq_poisson = glm(claim_count ~ pet_gender + pet_de_sexed + pet_de_sexed_age + pet_is_switcher +
                                        nb_state + nb_breed_type + nb_breed_trait + nb_number_of_breeds + 
-                                       nb_average_breed_size + pet_age_months + owner_age_years, 
+                                       nb_average_breed_size + pet_age_months + owner_age_years + 
+                                       remaining_lifetime + median_weekly_household_income + claim_behavior_factor, 
                          data = claim_freq_data, 
                          subset = train_indices, 
                          offset = log(exposure), 
@@ -33,7 +43,8 @@ anova(claim_freq_poisson, test = "Chisq") ##AIC =
 #quasipoisson
 claim_freq_quasi = glm(claim_count ~ pet_gender + pet_de_sexed + pet_de_sexed_age + pet_is_switcher +
                                      nb_state + nb_breed_type + nb_breed_trait + nb_number_of_breeds + 
-                                     nb_average_breed_size + pet_age_months + owner_age_years, 
+                                     nb_average_breed_size + pet_age_months + owner_age_years + 
+                                     remaining_lifetime + median_weekly_household_income + claim_behavior_factor,  
                        data = claim_freq_data, 
                        subset = train_indices, 
                        offset = log(exposure), 
@@ -44,7 +55,8 @@ anova(claim_freq_quasi, test = "Chisq")
 #negative binomial
 claim_freq_nbin = glm.nb(claim_count ~ offset(log(exposure)) + pet_gender + pet_de_sexed + pet_de_sexed_age + pet_is_switcher + 
                                        nb_state + nb_breed_type + nb_breed_trait + nb_number_of_breeds + 
-                                       nb_average_breed_size + pet_age_months + owner_age_years, 
+                                       nb_average_breed_size + pet_age_months + owner_age_years + 
+                                       remaining_lifetime + median_weekly_household_income + claim_behavior_factor, 
                          data = claim_freq_data,
                          subset = train_indices)
 summary(claim_freq_nbin)
@@ -81,7 +93,8 @@ data_train  = claim_freq_data[train_indices,]
 
 rf = randomForest(claim_count ~ pet_gender + pet_de_sexed + pet_de_sexed_age + pet_is_switcher + 
                                 nb_state + nb_breed_type + nb_breed_trait + nb_number_of_breeds + 
-                                nb_average_breed_size + pet_age_months + owner_age_years, 
+                                nb_average_breed_size + pet_age_months + owner_age_years + 
+                                remaining_lifetime + median_weekly_household_income + claim_behavior_factor, 
                   data = data_train, 
                   importance = TRUE, 
                   na.action = na.roughfix)
@@ -93,7 +106,8 @@ varImpPlot(rf, main = "Feature Importance")
 #AIC & BIC
 claim_freq_full = glm(claim_count ~ offset(log(exposure)) + pet_gender + pet_de_sexed + pet_de_sexed_age + pet_is_switcher + 
                         nb_state + nb_breed_type + nb_breed_trait + nb_number_of_breeds + 
-                        nb_average_breed_size + pet_age_months + owner_age_years, 
+                        nb_average_breed_size + pet_age_months + owner_age_years + 
+                        remaining_lifetime + median_weekly_household_income + claim_behavior_factor, 
                        data = claim_freq_data, 
                        subset = train_indices, 
                        family = poisson(link = "log"))
@@ -119,7 +133,7 @@ claim_freq_bic_back = stepAIC(claim_freq_full,
 ##claim_count ~ pet_age_months + owner_age_years + offset(log(exposure)) ##AIC = 9158.96
 
 
-#shrinkage techniques
+#shrinkage techniques - UPDATE THIS AFTER CREATIVE 
 claim_freq_data_new = claim_freq_data[, .(claim_count, #add creative factors
                                           exposure,
                                           pet_age_months, 
@@ -145,7 +159,7 @@ y_train_matrix       = as.matrix(y_train)
 x_test_matrix        = model.matrix(~., x_test)
 y_test_matrix        = as.matrix(y_test)
 
-par(mfrow=c(1,3))
+par(mfrow = c(1,3))
 #lasso
 CV_lasso_count       = cv.glmnet(x_train_matrix, y_train_matrix, family = "poisson", type.measure = "deviance", alpha = 1, nfolds = 10)
 CV_lasso_plot_count  = plot(CV_lasso_count$glmnet.fit, xvar = "lambda", main = "Lasso", label = T)
@@ -236,23 +250,16 @@ decile_plot_function = function(model) {
   
 claim_freq_train                    = claim_freq_data_new[train_indices_new, ]
 claim_freq_train$actual_claim_count = claim_freq_train$claim_count
-claim_freq_train$claim_count        = predict(model, newdata = claim_freq_train, type = "response")
-claim_freq_train$pred_claim_count   = claim_freq_train$claim_count
-claim_freq_train$claim_count        = claim_freq_train$actual_claim_count
+claim_freq_train$pred_claim_count   = predict(model, newdata = claim_freq_train, type = "response")
 
 claim_freq_test                     = claim_freq_data_new[-train_indices_new, ]
 claim_freq_test$actual_claim_count  = claim_freq_test$claim_count
-claim_freq_test$claim_count         = predict(model, newdata = claim_freq_test, type = "response")
-claim_freq_test$pred_claim_count    = claim_freq_test$claim_count
-claim_freq_test$claim_count         = claim_freq_test$actual_claim_count
+claim_freq_test$pred_claim_count    = predict(model, newdata = claim_freq_test, type = "response")
 
-decile_fulltrain                    = claim_freq_train
-decile_fulltest                     = claim_freq_test  
-
-claim_freq_train_sorted = decile_fulltrain %>%
+claim_freq_train_sorted = claim_freq_train %>%
   arrange(pred_claim_count/exposure)
 
-claim_freq_test_sorted = decile_fulltest %>%
+claim_freq_test_sorted = claim_freq_test %>%
   arrange(pred_claim_count/exposure)
 
 total_exposure_train = sum(claim_freq_train_sorted$exposure)
@@ -268,30 +275,28 @@ claim_freq_test_sorted = claim_freq_test_sorted %>%
          decile = cut(cum_exposure, breaks = seq(0, total_exposure_test, length.out = 11),
                       include.lowest = TRUE, labels = FALSE))
 
-decile_summarytrain = claim_freq_train_sorted %>%
+decile_summary_train = claim_freq_train_sorted %>%
   group_by(decile) %>%
   summarise(
-    avg_pred_claim_count = sum(pred_claim_count)/sum(exposure),
-    avg_actual_claim_count= sum(actual_claim_count)/sum(exposure)
-  )
+    pred_claim_freq = sum(pred_claim_count)/sum(exposure),
+    actual_claim_freq = sum(actual_claim_count)/sum(exposure))
 
-decile_summarytest = claim_freq_test_sorted %>%
+decile_summary_test = claim_freq_test_sorted %>%
   group_by(decile) %>%
   summarise(
-    avg_pred_claim_count = sum(pred_claim_count)/sum(exposure),
-    avg_actual_claim_count= sum(actual_claim_count)/sum(exposure)
-  )
+    pred_claim_freq = sum(pred_claim_count)/sum(exposure),
+    actual_claim_freq = sum(actual_claim_count)/sum(exposure))
 
-train = ggplot(decile_summarytrain, aes(x = factor(decile))) +
-  geom_line(aes(y = avg_pred_claim_count, group = 1, color = "Predicted"), size = 1.2) +
-  geom_line(aes(y = avg_actual_claim_count, group = 1, color = "Actual"), size = 1.2) +
+train = ggplot(decile_summary_train, aes(x = factor(decile))) +
+  geom_line(aes(y = pred_claim_freq, group = 1, color = "Predicted"), size = 1.2) +
+  geom_line(aes(y = actual_claim_freq, group = 1, color = "Actual"), size = 1.2) +
   labs(x = "Decile", y = "Claim Frequency", title = "Decile Plot: Actual vs Predicted (Train Set)") +
   theme_minimal() +
   guides(color = guide_legend(title = NULL))
 
-test = ggplot(decile_summarytest, aes(x = factor(decile))) +
-  geom_line(aes(y = avg_pred_claim_count, group = 1, color = "Predicted"), size = 1.2) +
-  geom_line(aes(y = avg_actual_claim_count, group = 1, color = "Actual"), size = 1.2) +
+test = ggplot(decile_summary_test, aes(x = factor(decile))) +
+  geom_line(aes(y = pred_claim_freq, group = 1, color = "Predicted"), size = 1.2) +
+  geom_line(aes(y = actual_claim_freq, group = 1, color = "Actual"), size = 1.2) +
   labs(x = "Decile", y = "Claim Frequency", title = "Decile Plot: Actual vs Predicted (Test Set)") +
   theme_minimal() +
   guides(color = guide_legend(title = NULL))
@@ -303,5 +308,6 @@ grid.arrange(train, test, nrow = 1)
 # decile_plot_function(claim_freq_poisson_new)
 # decile_plot_function(claim_freq_age_bin)
 # decile_plot_function(claim_freq_age_poly)
+
 
              
